@@ -223,6 +223,11 @@ export class BookingService {
         })),
       });
 
+      if (dto.booking_type === 'online') {
+        await this.confirm(newBooking.id);
+        // → Invoice được tạo ngay
+      }
+
       return newBooking;
     });
 
@@ -668,7 +673,7 @@ export class BookingService {
         data: {
           status: 'checked_out',
           actual_check_out: now,
-          check_out_date: now, // ← cập nhật ngày dự kiến = ngày thực tế
+          // check_out_date: now, // ← cập nhật ngày dự kiến = ngày thực tế
         },
       });
 
