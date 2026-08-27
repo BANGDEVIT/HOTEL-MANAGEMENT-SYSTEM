@@ -12,6 +12,7 @@ import { LoginDto } from './dto/login.dto';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from '../../common/mail/mail.service';
+import { RedisService } from '../../common/redis/redis.service';
 
 @Injectable()
 export class AuthService {
@@ -21,6 +22,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private mailService: MailService,
+    private redis: RedisService,
   ) {}
 
   // register
@@ -264,7 +266,11 @@ export class AuthService {
   // → Server revoke refreshToken trong DB
   // → Server xóa cookie
   // → Client xóa accessToken khỏi memory
-  async logout(accountId: string, refreshToken: string): Promise<void> {
+  async logout(
+    accountId: string,
+    refreshToken: string,
+    accessToken: string,
+  ): Promise<void> {
     await this.prisma.refreshToken.updateMany({
       where: {
         token: refreshToken,
@@ -273,5 +279,9 @@ export class AuthService {
       },
       data: { is_revoked: true },
     });
+
+    if (accessToken) {
+      await this.redis.blacklistToken(accessToken, 15 * 60);
+    }
   }
 }

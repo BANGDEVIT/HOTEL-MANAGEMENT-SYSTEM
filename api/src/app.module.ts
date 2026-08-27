@@ -16,6 +16,9 @@ import { ServicesModule } from './modules/services/services.module';
 import { InvoiceModule } from './modules/invoice/invoice.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { MailModule } from './common/mail/mail.module';
+import { RedisModule } from './common/redis/redis.module';
+import { AppThrottlerModule } from './common/throttler/throttler.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -36,8 +39,10 @@ import { MailModule } from './common/mail/mail.module';
     InvoiceModule,
     PaymentModule,
     MailModule,
+    RedisModule,
+    AppThrottlerModule,
   ],
-  controllers: [],
+  controllers: [AppController],
   providers: [
     {
       provide: APP_GUARD,

@@ -21,6 +21,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -29,6 +30,7 @@ export class AuthController {
 
   @Public()
   @Post('register')
+  @Throttle({ default: { ttl: 60_000, limit: 3 } })
   @HttpCode(201)
   @ApiOperation({
     summary: 'Đăng ký tài khoản',
@@ -50,6 +52,7 @@ export class AuthController {
 
   @Public()
   @Post('login')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } }) // // ← Login: max 5 lần/phút
   @HttpCode(200)
   @ApiOperation({
     summary: 'Đăng nhập',
@@ -130,8 +133,11 @@ export class AuthController {
     @GetAccount('sub') accountId: string,
   ) {
     const refreshToken = req.cookies['refresh-token'];
+    const accessToken = (req.headers as any).authorization
+      ?.replace('Bearer ', '')
+      .trim();
 
-    await this.authService.logout(accountId, refreshToken);
+    await this.authService.logout(accountId, refreshToken, accessToken);
 
     res.clearCookie('refresh-token');
   }

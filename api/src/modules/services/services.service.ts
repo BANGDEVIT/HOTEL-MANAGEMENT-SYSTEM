@@ -16,10 +16,14 @@ import {
 } from './dto/service-response.dto';
 import { Prisma } from '@prisma/client';
 import { BookingServiceResponseDto } from './dto/booking-service-response.dto';
+import { RedisService } from '../../common/redis/redis.service';
 
 @Injectable()
 export class ServicesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private redis: RedisService,
+  ) {}
 
   // ==================== CREATE ====================
   async create(dto: CreateServiceDto): Promise<ServiceResponseDto> {
@@ -41,49 +45,55 @@ export class ServicesService {
       select: this.serviceSelect(),
     });
 
+    await this.redis.delByPattern('services:');
+
     return this.transformService(service);
   }
 
   // ==================== FIND ALL ====================
   async findAll(query: QueryServiceDto): Promise<PaginatedServiceResponseDto> {
-    const { page = 1, limit = 10, search, is_active } = query;
+    const cacheKey = `services:${JSON.stringify(query)}`;
 
-    const skip = (page - 1) * limit;
-    const where: Prisma.ServiceWhereInput = {};
+    return await this.redis.remember(cacheKey, 600, async () => {
+      const { page = 1, limit = 10, search, is_active } = query;
 
-    // Mặc định chỉ hiện active
-    if (is_active !== undefined) {
-      where.is_active = is_active;
-    } else {
-      where.is_active = true;
-    }
+      const skip = (page - 1) * limit;
+      const where: Prisma.ServiceWhereInput = {};
 
-    if (search) {
-      where.name = { contains: search, mode: 'insensitive' };
-    }
+      // Mặc định chỉ hiện active
+      if (is_active !== undefined) {
+        where.is_active = is_active;
+      } else {
+        where.is_active = true;
+      }
 
-    // if (category) {
-    //   where.category = { contains: category, mode: 'insensitive' };
-    // }
+      if (search) {
+        where.name = { contains: search, mode: 'insensitive' };
+      }
 
-    const [servicesRaw, total] = await Promise.all([
-      this.prisma.service.findMany({
-        where,
-        skip,
-        take: limit,
-        select: this.serviceSelect(),
-        orderBy: { name: 'asc' },
-      }),
-      this.prisma.service.count({ where }),
-    ]);
+      // if (category) {
+      //   where.category = { contains: category, mode: 'insensitive' };
+      // }
 
-    return {
-      data: servicesRaw.map((s) => this.transformService(s)),
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+      const [servicesRaw, total] = await Promise.all([
+        this.prisma.service.findMany({
+          where,
+          skip,
+          take: limit,
+          select: this.serviceSelect(),
+          orderBy: { name: 'asc' },
+        }),
+        this.prisma.service.count({ where }),
+      ]);
+
+      return {
+        data: servicesRaw.map((s) => this.transformService(s)),
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    });
   }
 
   // ==================== FIND ONE ====================
@@ -131,6 +141,8 @@ export class ServicesService {
       select: this.serviceSelect(),
     });
 
+    await this.redis.delByPattern('services:');
+
     return this.transformService(updated);
   }
 
@@ -152,6 +164,8 @@ export class ServicesService {
       where: { id },
       data: { is_active: false },
     });
+
+    await this.redis.delByPattern('services:');
   }
 
   // ==================== ADD TO BOOKING ====================

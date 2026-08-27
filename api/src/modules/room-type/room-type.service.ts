@@ -12,10 +12,14 @@ import {
   RoomTypeResponseDto,
 } from './dto/response-room-type.dto';
 import { QueryRoomTypeDto } from './dto/query-room-type.dto';
+import { RedisService } from '../../common/redis/redis.service';
 
 @Injectable()
 export class RoomTypeService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private redis: RedisService,
+  ) {}
   async create(
     createRoomTypeDto: CreateRoomTypeDto,
   ): Promise<RoomTypeResponseDto> {
@@ -50,6 +54,8 @@ export class RoomTypeService {
       },
     });
 
+    await this.redis.delByPattern('room-types:');
+
     return {
       ...newRoomType,
       base_price: Number(newRoomType.base_price),
@@ -60,52 +66,56 @@ export class RoomTypeService {
   async findAll(
     query: QueryRoomTypeDto,
   ): Promise<PaginationRoomTypeResponseDto> {
-    const { search, page = 1, limit = 10 } = query;
-    const skip = (page - 1) * limit;
+    const cacheKey = `room-types:${JSON.stringify(query)}`;
 
-    const where: any = {
-      is_active: true,
-    };
+    return this.redis.remember(cacheKey, 300, async () => {
+      const { search, page = 1, limit = 10 } = query;
+      const skip = (page - 1) * limit;
 
-    if (search) {
-      where.name = { contains: search, mode: 'insensitive' };
-    }
+      const where: any = {
+        is_active: true,
+      };
 
-    const [roomTypesRaw, total] = await Promise.all([
-      this.prisma.roomType.findMany({
-        where,
-        take: limit,
-        skip,
-        select: {
-          id: true,
-          name: true,
-          base_price: true,
-          capacity: true,
-          amenities: true,
-          updated_at: true,
-          created_at: true,
-          bed_type: true,
-        },
+      if (search) {
+        where.name = { contains: search, mode: 'insensitive' };
+      }
 
-        orderBy: { base_price: 'asc' },
-      }),
+      const [roomTypesRaw, total] = await Promise.all([
+        this.prisma.roomType.findMany({
+          where,
+          take: limit,
+          skip,
+          select: {
+            id: true,
+            name: true,
+            base_price: true,
+            capacity: true,
+            amenities: true,
+            updated_at: true,
+            created_at: true,
+            bed_type: true,
+          },
 
-      this.prisma.roomType.count({ where }),
-    ]);
+          orderBy: { base_price: 'asc' },
+        }),
 
-    const roomTypes = roomTypesRaw.map((r) => ({
-      ...r,
-      base_price: Number(r.base_price),
-      amenities: r.amenities as Amenity[],
-    }));
+        this.prisma.roomType.count({ where }),
+      ]);
 
-    return {
-      data: roomTypes,
-      total: total,
-      page,
-      limit,
-      totalPage: Math.ceil(total / limit),
-    };
+      const roomTypes = roomTypesRaw.map((r) => ({
+        ...r,
+        base_price: Number(r.base_price),
+        amenities: r.amenities as Amenity[],
+      }));
+
+      return {
+        data: roomTypes,
+        total: total,
+        page,
+        limit,
+        totalPage: Math.ceil(total / limit),
+      };
+    });
   }
 
   async findOne(id: string): Promise<RoomTypeResponseDto> {
@@ -183,6 +193,8 @@ export class RoomTypeService {
       },
     });
 
+    await this.redis.delByPattern('room-types:');
+
     return {
       ...updatedRoomType,
       base_price: Number(updatedRoomType.base_price),
@@ -218,5 +230,7 @@ export class RoomTypeService {
       where: { id },
       data: { is_active: false },
     });
+
+    await this.redis.delByPattern('room-types:');
   }
 }

@@ -22,6 +22,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('payments')
 @ApiBearerAuth()
@@ -34,6 +35,7 @@ export class PaymentController {
 
   @Post()
   @Roles('staff', 'manager', 'admin')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Tạo thanh toán cho hóa đơn' })
   @ApiResponse({

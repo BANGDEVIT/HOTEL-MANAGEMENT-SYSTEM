@@ -192,6 +192,17 @@ export class BookingService {
         },
       });
 
+      // Tạo booking room
+
+      await tx.bookingRoom.createMany({
+        data: rooms.map((room) => ({
+          booking_id: newBooking.id,
+          room_id: room.id,
+          price_per_night:
+            override_prices?.[room.id] ?? Number(room.room_type.base_price),
+        })),
+      });
+
       // Sau khi tạo booking và booking_rooms, nếu là walk-in thì tạo invoice luôn
       if (isWalkIn) {
         const nights = Math.ceil(
@@ -214,22 +225,14 @@ export class BookingService {
         });
       }
 
-      await tx.bookingRoom.createMany({
-        data: rooms.map((room) => ({
-          booking_id: newBooking.id,
-          room_id: room.id,
-          price_per_night:
-            override_prices?.[room.id] ?? Number(room.room_type.base_price),
-        })),
-      });
-
-      if (dto.booking_type === 'online') {
-        await this.confirm(newBooking.id);
-        // → Invoice được tạo ngay
-      }
-
       return newBooking;
     });
+
+    // Online → confirm() gọi ngoài transaction (booking đã tồn tại trong DB)
+    if (booking_type === 'online') {
+      // → Invoice được tạo ngay
+      await this.confirm(booking.id); // ← an toàn vì booking đã được commit
+    }
 
     return this.findOne(booking.id);
   }
@@ -395,7 +398,7 @@ export class BookingService {
     await this.prisma.booking.update({
       where: { id },
       data: {
-        ...(check_in_date && { check_in_date: new Date(check_in_date) }),
+        ...(check_in_date && { check_in_date: new Date(check_in_date) }), // ...undefine se ko hien
         ...(check_out_date && { check_out_date: new Date(check_out_date) }),
         // ...(special_requests !== undefined && { special_requests }),
       },
