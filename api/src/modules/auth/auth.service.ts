@@ -41,7 +41,7 @@ export class AuthService {
     });
 
     if (!customerRole) {
-      throw new InternalServerErrorException('Role customer not exitis');
+      throw new InternalServerErrorException('Role customer not exists');
     }
 
     try {
@@ -259,7 +259,6 @@ export class AuthService {
 
     return { accessToken: newAccessToken };
   }
-
   // Logout
   // Client gọi POST /auth/logout
   // → Gửi kèm accessToken (header) + refreshToken (cookie)
@@ -282,6 +281,55 @@ export class AuthService {
 
     if (accessToken) {
       await this.redis.blacklistToken(accessToken, 15 * 60);
+    }
+  }
+
+  async logoutV2(
+    payload: { sub: string; roles: string[]; exp: number },
+    refreshToken: string,
+    accessToken: string,
+  ): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        token: refreshToken,
+        account_id: payload.sub,
+        is_revoked: false,
+      },
+      data: {
+        is_revoked: true,
+      },
+    });
+
+    if (accessToken) {
+      const now = Math.floor(Date.now() / 1000);
+      const ttl = payload.exp - now;
+
+      if (ttl > 0) {
+        await this.redis.blacklistToken(accessToken, ttl);
+      }
+    }
+  }
+
+  async logoutV3(accountId: string, accessToken: string, refreshToken: string) {
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        token: refreshToken,
+        account_id: accountId,
+        is_revoked: false,
+      },
+      data: {
+        is_revoked: true,
+      },
+    });
+
+    const payload = this.jwtService.decode(accessToken) as { exp: number };
+    if (payload?.exp) {
+      const now = Math.floor(Date.now() / 1000);
+      const ttl = payload.exp - now;
+
+      if (ttl > 0) {
+        await this.redis.blacklistToken(accessToken, ttl);
+      }
     }
   }
 }

@@ -22,6 +22,7 @@ export class CustomersService {
     private prisma: PrismaService,
     private s3Service: S3Service,
   ) {}
+
   async createGuest(
     dto: CreateGuestDto,
     files?: {
@@ -74,6 +75,7 @@ export class CustomersService {
 
     return this.transformCustomer(guest);
   }
+
   async findAll(
     query: QueryCustomerDto,
   ): Promise<PaginatedCustomerResponseDto> {
@@ -206,8 +208,8 @@ export class CustomersService {
       id_card,
       nationality,
       reward_points,
-      // id_card_img_url,      ← thêm sau AWS S3
-      // id_card_img_back_url, ← thêm sau AWS S3
+      // id_card_img_url,
+      // id_card_img_back_url,
     } = updateCustomerDto;
 
     if (is_active !== undefined) {

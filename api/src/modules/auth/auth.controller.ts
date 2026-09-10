@@ -141,4 +141,31 @@ export class AuthController {
 
     res.clearCookie('refresh-token');
   }
+
+  @Post('logout')
+  @HttpCode(204)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Đăng xuất',
+    description: 'Đăng xuất và thu hồi refresh token',
+  })
+  @ApiResponse({ status: 204, description: 'Đăng xuất thành công' })
+  @ApiResponse({
+    status: 401,
+    description: 'Chưa đăng nhập hoặc token hết hạn',
+  })
+  async logoutV2(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @GetAccount() payload: { sub: string; roles: string[]; exp: number },
+  ) {
+    const refreshToken = req.cookies['refresh-token'];
+    const accessToken = (req.headers as any).authorization
+      ?.replace('Bearer ', '')
+      .trim();
+
+    await this.authService.logoutV2(payload, refreshToken, accessToken);
+
+    res.clearCookie('refresh-token');
+  }
 }

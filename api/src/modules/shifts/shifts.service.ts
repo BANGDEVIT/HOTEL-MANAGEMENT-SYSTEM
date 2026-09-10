@@ -19,6 +19,7 @@ import {
   AssignEmployeeResponseDto,
 } from './dto/assign-employees.dto';
 import { QueryScheduleDto } from './dto/schedule.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class ShiftsService {
@@ -305,7 +306,7 @@ export class ShiftsService {
     const existingAssignment = await this.prisma.employeeShift.findMany({
       where: {
         shift_id: shiftId,
-        work_date: new Date(work_date),
+        // work_date: new Date(work_date),
         employee_id: { in: employee_ids },
       },
       select: { employee_id: true },

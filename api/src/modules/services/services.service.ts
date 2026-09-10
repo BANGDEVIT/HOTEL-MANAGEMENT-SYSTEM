@@ -9,13 +9,19 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 import { QueryServiceDto } from './dto/query-service.dto';
-import { AddBookingServiceDto } from './dto/add-booking-service.dto';
+import {
+  AddBookingServiceDto,
+  AddBookingServicesDto,
+} from './dto/add-booking-service.dto';
 import {
   PaginatedServiceResponseDto,
   ServiceResponseDto,
 } from './dto/service-response.dto';
 import { Prisma } from '@prisma/client';
-import { BookingServiceResponseDto } from './dto/booking-service-response.dto';
+import {
+  AddMultipleServiceResponseDto,
+  BookingServiceResponseDto,
+} from './dto/booking-service-response.dto';
 import { RedisService } from '../../common/redis/redis.service';
 
 @Injectable()
@@ -264,6 +270,141 @@ export class ServicesService {
       total_price: Number(bookingService.total_price),
       note: bookingService.note,
       used_at: bookingService.used_at,
+    };
+  }
+
+  async addToBookingV1(
+    bookingId: string,
+    dto: AddBookingServicesDto,
+  ): Promise<AddMultipleServiceResponseDto> {
+    const { services } = dto;
+
+    // 1. Check booking
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+    });
+
+    if (!booking) throw new NotFoundException('Không tìm thấy booking');
+
+    if (booking.status !== 'checked_in') {
+      throw new BadRequestException(
+        'Chỉ có thể thêm dịch vụ khi khách đang check-in',
+      );
+    }
+
+    // 2. Check tất cả service tồn tại và active
+    const serviceIds = services.map((s) => s.service_Id);
+
+    const foundServices = await this.prisma.service.findMany({
+      where: { id: { in: serviceIds } },
+    });
+
+    // Check thiếu service nào không
+    if (foundServices.length !== serviceIds.length) {
+      const foundIds = foundServices.map((s) => s.id);
+      const notFoundIds = serviceIds.filter((id) => !foundIds.includes(id));
+      throw new NotFoundException(
+        `Không tìm thấy dịch vụ với id: ${notFoundIds.join(', ')}`,
+      );
+    }
+
+    // Check service nào bị inactive
+    const inactiveServices = foundServices.filter((s) => !s.is_active);
+    if (inactiveServices.length > 0) {
+      throw new BadRequestException(
+        `Dịch vụ đã bị vô hiệu hóa: ${inactiveServices.map((s) => s.name).join(', ')}`,
+      );
+    }
+
+    // 3. Tính giá từng service
+    const serviceMap = new Map(foundServices.map((s) => [s.id, s]));
+
+    const bookingServicesData = services.map((item) => {
+      const service = serviceMap.get(item.service_Id);
+      const unit_price = Number(service.price);
+      return {
+        booking_id: bookingId,
+        service_id: item.service_Id,
+        quantity: item.quantity,
+        unit_price,
+        total_price: unit_price * item.quantity,
+        note: item.note ?? null,
+      };
+    });
+
+    const totalAddedPrice = bookingServicesData.reduce(
+      (sum, s) => sum + s.total_price,
+      0,
+    );
+
+    // 4. Transaction — tạo nhiều booking service + cập nhật invoice
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Tạo tất cả booking services
+      await tx.bookingService.createMany({
+        data: bookingServicesData,
+      });
+
+      // Lấy lại data vừa tạo (createMany không trả về data)
+      const createdServices = await tx.bookingService.findMany({
+        where: { booking_id: bookingId },
+        orderBy: { used_at: 'desc' },
+        take: services.length,
+        select: {
+          id: true,
+          quantity: true,
+          unit_price: true,
+          total_price: true,
+          note: true,
+          used_at: true,
+          service: {
+            select: { name: true },
+          },
+        },
+      });
+
+      // Cập nhật invoice
+      const invoice = await tx.invoice.findUnique({
+        where: { booking_id: bookingId },
+      });
+
+      let newTotalAmount = 0;
+      let newFinalAmount = 0;
+
+      if (invoice) {
+        newTotalAmount = Number(invoice.total_amount) + totalAddedPrice;
+        newFinalAmount = newTotalAmount - Number(invoice.discount);
+
+        await tx.invoice.update({
+          where: { booking_id: bookingId },
+          data: {
+            total_amount: newTotalAmount,
+            final_amount: newFinalAmount,
+          },
+        });
+      }
+
+      return {
+        createdServices,
+        newTotalAmount,
+        newFinalAmount,
+        hasInvoice: !!invoice,
+      };
+    });
+
+    return {
+      booking_services: result.createdServices.map((bs) => ({
+        id: bs.id,
+        service_name: bs.service.name,
+        quantity: bs.quantity,
+        unit_price: Number(bs.unit_price),
+        total_price: Number(bs.total_price),
+        note: bs.note,
+        used_at: bs.used_at,
+      })),
+      total_added: services.length,
+      invoice_updated: result.hasInvoice,
+      new_total_amount: result.newTotalAmount,
+      new_final_amount: result.newFinalAmount,
     };
   }
 

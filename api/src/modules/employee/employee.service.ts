@@ -18,6 +18,7 @@ import { ConfigService } from '@nestjs/config';
 import { UpdatePasswordDto } from './dto/reset-password.dto';
 import { QueryProfileShiftDto } from './dto/profile-employee.dto';
 import { S3Service } from '../../common/s3/s3.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class EmployeeService {
@@ -33,7 +34,7 @@ export class EmployeeService {
 
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: Prisma.EmployeeWhereInput = {};
 
     if (search) {
       where.OR = [

@@ -23,8 +23,8 @@ export class RefreshTokenStrategy extends PassportStrategy(
   }
 
   async validate(req: Request, payload: { sub: string; roles: string[] }) {
-    console.log('RefreshTokenStrategy.validate called');
-    console.log('Payload', { sub: payload.sub, email: payload.roles });
+    // console.log('RefreshTokenStrategy.validate called');
+    // console.log('Payload', { sub: payload.sub, email: payload.roles });
 
     const authHeader = req.headers.authorization;
     if (!authHeader) {
