@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   Post,
   Req,
@@ -167,5 +168,24 @@ export class AuthController {
     await this.authService.logoutV2(payload, refreshToken, accessToken);
 
     res.clearCookie('refresh-token');
+  }
+
+  @Get('me')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Lấy thông tin tài khoản hiện tai',
+    description:
+      'Trả về roles và tên MỚI NHẤT từ DB, không phụ thuộc dữ liệu cũ trong JWT',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Trả về id, email, roles, fullName',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Chưa đăng nhập hoặc token không hợp lệ',
+  })
+  async getMe(@GetAccount('sub') accountId: string) {
+    return this.authService.getMe(accountId);
   }
 }

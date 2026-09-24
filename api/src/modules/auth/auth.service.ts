@@ -332,4 +332,44 @@ export class AuthService {
       }
     }
   }
+
+  async getMe(accountId: string) {
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+      include: {
+        customer: true,
+        employee: true,
+        role_account: {
+          include: { role: true },
+        },
+      },
+    });
+
+    if (!account) {
+      throw new UnauthorizedException('Tài khoản không tồn tại');
+    }
+
+    if (!account.is_active) {
+      throw new UnauthorizedException('Tài khoản đã bị khóa');
+    }
+
+    // Lấy roles TƯƠI từ DB — không tin payload.roles từ token cũ
+    const roles = account.role_account.map((ra) => ra.role.name);
+
+    // account.customer / account.employee đã CÓ SẴN data đầy đủ
+    // nhờ include ở trên — không cần query lại lần nữa
+    let fullName: string | null = null;
+    if (account.customer) {
+      fullName = `${account.customer.last_name} ${account.customer.first_name}`;
+    } else if (account.employee) {
+      fullName = `${account.employee.last_name} ${account.employee.first_name}`;
+    }
+
+    return {
+      id: account.id,
+      email: account.email,
+      roles,
+      fullName,
+    };
+  }
 }

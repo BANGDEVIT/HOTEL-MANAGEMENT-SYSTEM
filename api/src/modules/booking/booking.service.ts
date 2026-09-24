@@ -229,10 +229,10 @@ export class BookingService {
     });
 
     // Online → confirm() gọi ngoài transaction (booking đã tồn tại trong DB)
-    if (booking_type === 'online') {
-      // → Invoice được tạo ngay
-      await this.confirm(booking.id); // ← an toàn vì booking đã được commit
-    }
+    // if (booking_type === 'online') {
+    //   // → Invoice được tạo ngay
+    //   await this.confirm(booking.id); // ← an toàn vì booking đã được commit
+    // }
 
     return this.findOne(booking.id);
   }
@@ -642,7 +642,6 @@ export class BookingService {
 
     return this.findOne(id);
   }
-
   // ==================== CHECK-OUT ====================
   async checkOut(id: string, accountId: string): Promise<BookingResponseDto> {
     const booking = await this.prisma.booking.findUnique({

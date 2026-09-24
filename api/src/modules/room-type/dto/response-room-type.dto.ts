@@ -25,6 +25,9 @@ export class RoomTypeResponseDto {
   @ApiProperty({ example: 'double', enum: BedType })
   bed_type: BedType;
 
+  @ApiProperty({ example: true })
+  is_active: boolean;
+
   @ApiProperty({ example: '2026-05-12T00:00:00.000Z' })
   created_at: Date;
 

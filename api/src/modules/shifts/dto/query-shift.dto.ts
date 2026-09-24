@@ -1,28 +1,28 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { DayOfWeek, ShiftName } from '@prisma/client';
+import { ShiftName } from '@prisma/client';
+import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class QueryShiftDTO {
-  @ApiPropertyOptional({ example: 1, description: 'Số trang' })
+  @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()
+  @Type(() => Number) // query string luôn là chuỗi -> ép sang số
   @IsInt()
   @Min(1)
-  page?: number;
+  page?: number = 1;
 
-  @ApiPropertyOptional({ example: 10, description: 'số lượng ca mỗi trang' })
+  @ApiPropertyOptional({ example: 20, default: 20 })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(20)
-  limit?: number;
+  @Max(100)
+  limit?: number = 20;
 
-  @ApiPropertyOptional({ example: 'morning', enum: ShiftName })
+  @ApiPropertyOptional({ enum: ShiftName })
   @IsOptional()
-  @IsEnum(ShiftName)
+  @IsEnum(ShiftName, {
+    message: 'Tên ca phải là morning, afternoon, evening hoặc night',
+  })
   name?: ShiftName;
-
-  @ApiPropertyOptional({ example: 'monday', enum: DayOfWeek })
-  @IsOptional()
-  @IsEnum(DayOfWeek)
-  day_of_week: DayOfWeek;
 }

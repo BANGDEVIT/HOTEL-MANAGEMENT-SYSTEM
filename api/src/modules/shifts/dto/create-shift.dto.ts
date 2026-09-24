@@ -1,39 +1,25 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { DayOfWeek, ShiftName } from '@prisma/client';
-import { IsEnum, IsNotEmpty, IsString, Matches } from 'class-validator';
+import { ShiftName } from '@prisma/client';
+import { IsEnum, Matches } from 'class-validator';
+
+/** HH:mm, 24 giờ: 00:00 -> 23:59 */
+export const HHMM_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export class CreateShiftDto {
-  @ApiProperty({
-    example: 'morning',
-    enum: ShiftName,
-    description: 'Tên ca: morning, afternoon, evening, night',
+  @ApiProperty({ enum: ShiftName, example: ShiftName.morning })
+  @IsEnum(ShiftName, {
+    message: 'Tên ca phải là morning, afternoon, evening hoặc night',
   })
-  @IsNotEmpty({ message: 'Tên ca không được để trống' })
-  @IsEnum(ShiftName, { message: 'Tên ca không hợp lệ' })
   name: ShiftName;
 
-  @ApiProperty({
-    example: 'monday',
-    enum: DayOfWeek,
-    description: 'Ngày trong tuần',
-  })
-  @IsNotEmpty({ message: 'Ngày làm việc không được để trống' })
-  @IsEnum(DayOfWeek, { message: 'Ngày không hợp lệ' })
-  day_of_week: DayOfWeek;
-
-  @ApiProperty({ example: '07:00', description: 'Giờ bắt đầu (HH:mm)' })
-  @IsNotEmpty({ message: 'Thời gian bắt đầu không được để trống' })
-  @IsString()
-  @Matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, {
-    message: 'Thời gian phải có định dạng HH:mm',
-  })
+  @ApiProperty({ example: '06:00', description: 'Giờ bắt đầu, dạng HH:mm' })
+  @Matches(HHMM_REGEX, { message: 'Giờ bắt đầu phải có dạng HH:mm' })
   start_time: string;
 
-  @ApiProperty({ example: '11:00', description: 'Giờ kết thúc (HH:mm)' })
-  @IsNotEmpty({ message: 'Thời gian kết thúc không được để trống' })
-  @IsString()
-  @Matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, {
-    message: 'Thời gian phải có định dạng HH:mm',
+  @ApiProperty({
+    example: '14:00',
+    description: 'Giờ kết thúc, dạng HH:mm. Nhỏ hơn giờ bắt đầu = ca qua đêm',
   })
+  @Matches(HHMM_REGEX, { message: 'Giờ kết thúc phải có dạng HH:mm' })
   end_time: string;
 }

@@ -40,6 +40,7 @@ enum InvoiceStatus {
   unpaid
   paid
   partially_paid
+  cancelled
 }
 
 enum ShiftName {
@@ -47,16 +48,6 @@ enum ShiftName {
   afternoon
   evening
   night
-}
-
-enum DayOfWeek {
-  monday
-  tuesday
-  wednesday
-  thursday
-  friday
-  saturday
-  sunday
 }
 
 enum CustomerSource {
@@ -161,21 +152,19 @@ model EmployeeShift {
   employee Employee @relation(fields: [employee_id], references: [id])
   shift    Shift    @relation(fields: [shift_id], references: [id])
 
-  @@index([employee_id, work_date]) // xem lịch làm việc nhân viên
+  @@unique([employee_id, work_date]) // 1 nhân viên chỉ trực 1 ca / ngày
+  @@index([work_date]) // xem lịch cả tuần của mọi người
 }
 
 model Shift {
-  id          String    @id @default(uuid()) @db.Uuid
-  name        ShiftName
-  day_of_week DayOfWeek
-  start_time  DateTime  @db.Time
-  end_time    DateTime  @db.Time
-  created_at  DateTime  @default(now()) // ← thêm
-  updated_at  DateTime  @updatedAt
+  id         String    @id @default(uuid()) @db.Uuid
+  name       ShiftName @unique // mỗi loại ca chỉ có 1 bản ghi
+  start_time DateTime  @db.Time // luôn ghi/đọc theo UTC
+  end_time   DateTime  @db.Time // end < start = ca qua đêm
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
 
   employee_shifts EmployeeShift[]
-
-  @@unique([name, day_of_week])
 }
 
 model Booking {

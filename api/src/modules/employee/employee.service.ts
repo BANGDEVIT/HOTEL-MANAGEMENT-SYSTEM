@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -11,6 +12,7 @@ import { UpdateEmployeeDto, UpdateProfileDto } from './dto/update-employee.dto';
 import { QueryEmployeeDTO } from './dto/query-employee.dto';
 import {
   EmployeeProfileResponseDto,
+  EmployeeResponseDto,
   PaginatedEmployeeResponseDto,
 } from './dto/employee-response';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -27,11 +29,11 @@ export class EmployeeService {
     private readonly configService: ConfigService,
     private readonly s3Service: S3Service,
   ) {}
+
   async findAll(
     query: QueryEmployeeDTO,
   ): Promise<PaginatedEmployeeResponseDto> {
     const { page = 1, limit = 10, search, position, gender } = query;
-
     const skip = (page - 1) * limit;
 
     const where: Prisma.EmployeeWhereInput = {};
@@ -41,100 +43,49 @@ export class EmployeeService {
         { first_name: { contains: search, mode: 'insensitive' } },
         { last_name: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } },
+        { account: { email: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
-    if (position) {
-      where.position = { contains: position, mode: 'insensitive' };
-    }
-
-    if (gender) {
-      where.gender = { contains: gender, mode: 'insensitive' };
-    }
+    if (position) where.position = { contains: position, mode: 'insensitive' };
+    if (gender) where.gender = { contains: gender, mode: 'insensitive' };
 
     const [employeesRaw, total] = await Promise.all([
       this.prisma.employee.findMany({
         where,
         skip,
         take: limit,
-        select: {
-          id: true,
-          first_name: true,
-          last_name: true,
-          email: true,
-          phone: true,
-          position: true,
-          salary: true,
-          hired_date: true,
-          gender: true,
-          avatar_url: true,
-          account: {
-            select: {
-              id: true,
-              email: true,
-              is_active: true,
-            },
-          },
-        },
+        select: this.employeeSelect(),
         orderBy: [{ last_name: 'asc' }, { first_name: 'asc' }],
       }),
-
       this.prisma.employee.count({ where }),
     ]);
 
-    const employees = employeesRaw.map((em) => {
-      const { first_name, last_name, ...rest } = em;
-      return {
-        ...rest,
-        full_name: `${last_name} ${first_name}`,
-      };
-    });
-
     return {
-      data: employees,
-      total: total,
-      page: page,
-      limit: limit,
+      data: employeesRaw.map((em) => this.transformEmployee(em)),
+      total,
+      page,
+      limit,
       totalPages: Math.ceil(total / limit),
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string): Promise<EmployeeResponseDto> {
     const employeeRaw = await this.prisma.employee.findUnique({
       where: { id },
-      select: {
-        id: true,
-        first_name: true,
-        last_name: true,
-        email: true,
-        phone: true,
-        position: true,
-        avatar_url: true,
-        salary: true,
-        hired_date: true,
-        gender: true,
-        account: {
-          select: {
-            id: true,
-            email: true,
-            is_active: true,
-          },
-        },
-      },
+      select: this.employeeSelect(),
     });
 
     if (!employeeRaw) {
       throw new NotFoundException(`Không tìm thấy nhân viên với id: ${id}`);
     }
-
-    const full_name = employeeRaw.last_name + employeeRaw.first_name;
-
-    const employee = { ...employeeRaw, full_name };
-
-    return employee;
+    return this.transformEmployee(employeeRaw);
   }
 
-  async create(createEmployeeDto: CreateEmployeeDto) {
+  async create(
+    createEmployeeDto: CreateEmployeeDto,
+  ): Promise<EmployeeResponseDto> {
     const {
       email,
       password,
@@ -151,84 +102,65 @@ export class EmployeeService {
     const existingAccount = await this.prisma.account.findUnique({
       where: { email },
     });
-
     if (existingAccount) {
-      throw new ConflictException('Email has already been used');
+      throw new ConflictException('Email đã được sử dụng');
+    }
+
+    // Không cho tạo tài khoản quản trị viên qua API — admin chỉ tạo bằng seed
+    if (role === 'admin') {
+      throw new ForbiddenException(
+        'Không thể tạo tài khoản quản trị viên từ đây',
+      );
     }
 
     const roleRecord = await this.prisma.role.findUnique({
       where: { name: role },
     });
-
     if (!roleRecord) {
-      throw new NotFoundException(`Role ${role} doesn not exist`);
+      throw new NotFoundException(`Vai trò ${role} không tồn tại`);
     }
 
     const employee = await this.prisma.$transaction(async (tx) => {
       const hashPassword = await bcrypt.hash(password, 10);
 
-      // 1. Tạo account
       const account = await tx.account.create({
         data: {
           email,
           hash_password: hashPassword,
-          role_account: {
-            create: { role_id: roleRecord.id },
-          },
+          role_account: { create: { role_id: roleRecord.id } },
         },
       });
 
-      // 2. Tạo employee
-      const newEmployee = await tx.employee.create({
+      return tx.employee.create({
         data: {
           account_id: account.id,
           first_name,
-          email,
           last_name,
+          email,
           phone,
           position,
           salary,
           hired_date: new Date(hired_date),
           gender,
         },
-        select: {
-          id: true,
-          first_name: true,
-          last_name: true,
-          email: true,
-          phone: true,
-          position: true,
-          salary: true,
-          hired_date: true,
-          gender: true,
-          avatar_url: true,
-          account: {
-            select: {
-              id: true,
-              email: true,
-              is_active: true,
-            },
-          },
-        },
+        select: this.employeeSelect(),
       });
-      return newEmployee;
     });
 
-    const { first_name: fn, last_name: ln, ...rest } = employee;
-    return {
-      ...rest,
-      full_name: `${ln} ${fn}`,
-    };
+    return this.transformEmployee(employee);
   }
 
-  async update(id: string, updateEmployeeDto: UpdateEmployeeDto) {
+  async update(
+    id: string,
+    updateEmployeeDto: UpdateEmployeeDto,
+  ): Promise<EmployeeResponseDto> {
     const existingEmployee = await this.prisma.employee.findUnique({
       where: { id },
       include: { account: true },
     });
 
     if (!existingEmployee) {
-      throw new NotFoundException('Employee does not exist');
+      throw new NotFoundException('Nhân viên không tồn tại');
     }
 
     const {
@@ -247,14 +179,13 @@ export class EmployeeService {
       const existingEmail = await this.prisma.account.findUnique({
         where: { email },
       });
-
       if (existingEmail) {
-        throw new ConflictException('Email has been already exist');
+        throw new ConflictException('Email đã được sử dụng');
       }
     }
 
     const employee = await this.prisma.$transaction(async (tx) => {
-      const accountData: any = {};
+      const accountData: Prisma.AccountUpdateInput = {};
       if (email) accountData.email = email;
       if (is_active !== undefined) accountData.is_active = is_active;
 
@@ -265,38 +196,23 @@ export class EmployeeService {
         });
       }
 
-      return await tx.employee.update({
-        where: { id: id },
+      return tx.employee.update({
+        where: { id },
         data: {
           ...(first_name && { first_name }),
           ...(last_name && { last_name }),
+          ...(email && { email }),
           ...(phone && { phone }),
           ...(position && { position }),
           ...(salary !== undefined && { salary }),
           ...(hired_date && { hired_date: new Date(hired_date) }),
           ...(gender && { gender }),
         },
-        select: {
-          id: true,
-          first_name: true,
-          last_name: true,
-          email: true,
-          phone: true,
-          position: true,
-          salary: true,
-          hired_date: true,
-          gender: true,
-          account: { select: { id: true, email: true, is_active: true } },
-        },
+        select: this.employeeSelect(),
       });
     });
 
-    const { first_name: fn, last_name: ln, ...rest } = employee;
-
-    return {
-      ...rest,
-      full_name: `${ln} ${fn}`,
-    };
+    return this.transformEmployee(employee);
   }
 
   async resetPassword(id: string): Promise<void> {
@@ -306,13 +222,18 @@ export class EmployeeService {
     });
 
     if (!existingEmployee) {
-      throw new NotFoundException('Employee does not Exist');
+      throw new NotFoundException('Nhân viên không tồn tại');
     }
 
-    const hashPassword = await bcrypt.hash(
-      this.configService.get<string>('RESET_PASSWORD'),
-      10,
-    );
+    // Thiếu biến môi trường sẽ khiến bcrypt.hash(undefined) ném lỗi khó hiểu
+    const defaultPassword = this.configService.get<string>('RESET_PASSWORD');
+    if (!defaultPassword) {
+      throw new InternalServerErrorException(
+        'Chưa cấu hình RESET_PASSWORD trong biến môi trường',
+      );
+    }
+
+    const hashPassword = await bcrypt.hash(defaultPassword, 10);
 
     await this.prisma.account.update({
       where: { id: existingEmployee.account.id },
@@ -320,205 +241,160 @@ export class EmployeeService {
     });
   }
 
-  async remove(id: string): Promise<void> {
+  /** Xoá mềm = khoá tài khoản. currentAccountId để chặn tự khoá chính mình */
+  async remove(id: string, currentAccountId?: string): Promise<void> {
     const existingEmployee = await this.prisma.employee.findUnique({
-      where: {
-        id,
-      },
+      where: { id },
       include: { account: true },
     });
 
     if (!existingEmployee) {
-      throw new NotFoundException('Emploiyee does not exist');
+      throw new NotFoundException('Nhân viên không tồn tại');
+    }
+
+    if (currentAccountId && existingEmployee.account_id === currentAccountId) {
+      throw new BadRequestException('Không thể khoá tài khoản của chính bạn');
+    }
+
+    if (!existingEmployee.account.is_active) {
+      throw new BadRequestException('Tài khoản này đã bị khoá');
     }
 
     await this.prisma.account.update({
       where: { id: existingEmployee.account_id },
-      data: {
-        is_active: false,
-      },
+      data: { is_active: false },
     });
   }
 
-  async getProfile(id: string): Promise<EmployeeProfileResponseDto> {
+  async getProfile(accountId: string): Promise<EmployeeProfileResponseDto> {
     const employee = await this.prisma.employee.findUnique({
-      where: { account_id: id },
-      select: {
-        id: true,
-        first_name: true,
-        last_name: true,
-        email: true,
-        phone: true,
-        position: true,
-        hired_date: true,
-        gender: true,
-        avatar_url: true,
-      },
+      where: { account_id: accountId },
+      select: this.employeeSelect(),
     });
 
     if (!employee) {
-      throw new NotFoundException('Employee does not exist');
+      throw new NotFoundException('Nhân viên không tồn tại');
     }
-    try {
-      const { first_name, last_name, ...rest } = employee;
-      const fullName: string = `${last_name} ${first_name}`;
-      return {
-        ...rest,
-        full_name: fullName,
-      };
-    } catch (error) {
-      console.error('Error during getProfile in Employee service:', error);
-      throw new InternalServerErrorException(
-        'An error occurred during getProfile in Employee service:',
-      );
-    }
+
+    return this.transformEmployee(employee);
   }
 
   async updateProfile(
-    id: string,
+    accountId: string,
     updateProfile: UpdateProfileDto,
     file?: Express.Multer.File,
   ): Promise<EmployeeProfileResponseDto> {
     const employee = await this.prisma.employee.findUnique({
-      where: {
-        account_id: id,
-      },
+      where: { account_id: accountId },
     });
 
     if (!employee) {
-      throw new NotFoundException('Employee does not exists');
+      throw new NotFoundException('Nhân viên không tồn tại');
     }
 
     let avatarUrl: string | undefined;
 
-    // Xử lý upload ảnh mới nếu có file
     if (file) {
       try {
         avatarUrl = await this.s3Service.uploadFile(file, 'avatars');
         if (employee.avatar_url) {
           await this.s3Service.deleteFile(employee.avatar_url).catch(() => {});
         }
-      } catch (error) {
-        throw new InternalServerErrorException('Upload ảnh thất bại', error);
+      } catch {
+        throw new InternalServerErrorException('Tải ảnh lên thất bại');
       }
     } else if (updateProfile.avatar_url) {
-      // Nếu client gửi trực tiếp URL (trường hợp muốn cập nhật từ URL có sẵn)
       avatarUrl = updateProfile.avatar_url;
     }
 
-    try {
-      const { first_name, last_name, phone, gender } = updateProfile;
+    const { first_name, last_name, phone, gender } = updateProfile;
 
-      const employeeUpdate = await this.prisma.employee.update({
-        where: { account_id: id },
-        data: {
-          ...(first_name && { first_name }),
-          ...(last_name && { last_name }),
-          ...(phone && { phone }),
-          ...(gender && { gender }),
-          ...(avatarUrl && { avatar_url: avatarUrl }),
-        },
-        select: {
-          id: true,
-          first_name: true,
-          last_name: true,
-          email: true,
-          phone: true,
-          position: true,
-          hired_date: true,
-          gender: true,
-          avatar_url: true,
-        },
-      });
-      const { first_name: fn, last_name: ln, ...rest } = employeeUpdate;
-      const fullName: string = `${ln} ${fn}`;
-      return {
-        ...rest,
-        full_name: fullName,
-      };
-    } catch (error) {
-      console.error('Error during update profile in Employee service:', error);
-      throw new InternalServerErrorException(
-        'An error occurred during update profile in Employee service:',
-      );
-    }
+    const updated = await this.prisma.employee.update({
+      where: { account_id: accountId },
+      data: {
+        ...(first_name && { first_name }),
+        ...(last_name && { last_name }),
+        ...(phone && { phone }),
+        ...(gender && { gender }),
+        ...(avatarUrl && { avatar_url: avatarUrl }),
+      },
+      select: this.employeeSelect(),
+    });
+
+    return this.transformEmployee(updated);
   }
 
-  async updatePassword(accountId: string, dto: UpdatePasswordDto) {
+  async updatePassword(
+    accountId: string,
+    dto: UpdatePasswordDto,
+  ): Promise<void> {
     const { email, password, newPassword } = dto;
+
     const account = await this.prisma.account.findUnique({
       where: { id: accountId },
       select: { email: true, hash_password: true },
     });
 
     if (!account) {
-      throw new NotFoundException('AcountId not exsits');
+      throw new NotFoundException('Tài khoản không tồn tại');
     }
 
     if (account.email !== email) {
-      throw new BadRequestException('Email or password is incorrect');
+      throw new BadRequestException('Email hoặc mật khẩu không đúng');
     }
 
     const isMatch = await bcrypt.compare(password, account.hash_password);
     if (!isMatch) {
-      throw new BadRequestException('Email or password is incorrect');
+      throw new BadRequestException('Email hoặc mật khẩu không đúng');
+    }
+
+    if (password === newPassword) {
+      throw new BadRequestException('Mật khẩu mới phải khác mật khẩu hiện tại');
     }
 
     const newHashedPassword = await bcrypt.hash(newPassword, 10);
 
     await this.prisma.account.update({
       where: { id: accountId },
-      data: {
-        hash_password: newHashedPassword,
-      },
+      data: { hash_password: newHashedPassword },
     });
   }
 
   async getProfileShifts(accountId: string, query: QueryProfileShiftDto) {
     const { week, work_date } = query;
 
-    // Check không dùng cả 2 cùng lúc
     if (week && work_date) {
       throw new BadRequestException(
-        'Do not filter work_date and web at the same time.',
+        'Không thể dùng work_date và week cùng lúc',
       );
     }
 
-    // Tìm employee theo accountId
     const employee = await this.prisma.employee.findUnique({
       where: { account_id: accountId },
+      select: { id: true },
     });
-
     if (!employee) {
-      throw new NotFoundException('Employee does not exist');
+      throw new NotFoundException('Không tìm thấy nhân viên');
     }
 
-    const where: any = {
-      employee_id: employee.id,
-    };
+    const where: Prisma.EmployeeShiftWhereInput = { employee_id: employee.id };
 
-    // Filter theo ngày cụ thể
     if (work_date) {
-      where.work_date = new Date(work_date);
-    }
-
-    // Filter theo tuần
-    if (week) {
-      const date = new Date(week);
-      const day = date.getDay();
-
-      const monday = new Date(date);
-      monday.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
-      monday.setHours(0, 0, 0, 0);
-
+      where.work_date = new Date(`${work_date}T00:00:00Z`);
+    } else {
+      // Không truyền gì -> tuần hiện tại theo giờ VN. Mọi phép tính ngày đều dùng UTC.
+      const anchor =
+        week ??
+        new Date().toLocaleDateString('sv-SE', {
+          timeZone: 'Asia/Ho_Chi_Minh',
+        });
+      const d = new Date(`${anchor}T00:00:00Z`);
+      const dow = d.getUTCDay(); // 0 = CN
+      const monday = new Date(d);
+      monday.setUTCDate(d.getUTCDate() - (dow === 0 ? 6 : dow - 1));
       const sunday = new Date(monday);
-      sunday.setDate(monday.getDate() + 6);
-      sunday.setHours(23, 59, 59, 999);
-
-      where.work_date = {
-        gte: monday,
-        lte: sunday,
-      };
+      sunday.setUTCDate(monday.getUTCDate() + 6);
+      where.work_date = { gte: monday, lte: sunday };
     }
 
     const shifts = await this.prisma.employeeShift.findMany({
@@ -527,26 +403,82 @@ export class EmployeeService {
         id: true,
         work_date: true,
         shift: {
-          select: {
-            name: true,
-            day_of_week: true,
-            start_time: true,
-            end_time: true,
-          },
+          select: { id: true, name: true, start_time: true, end_time: true }, // bỏ day_of_week
         },
       },
       orderBy: [{ work_date: 'asc' }, { shift: { start_time: 'asc' } }],
     });
 
-    return shifts.map((s) => ({
-      id: s.id,
-      work_date: s.work_date.toISOString().slice(0, 10),
-      shift: {
-        name: s.shift.name,
-        day_of_week: s.shift.day_of_week,
-        start_time: s.shift.start_time.toTimeString().slice(0, 5),
-        end_time: s.shift.end_time.toTimeString().slice(0, 5),
+    return shifts.map((s) => {
+      // toISOString (UTC), KHÔNG dùng toTimeString (giờ local) -> không lệch 7 tiếng
+      const start = s.shift.start_time.toISOString().slice(11, 16);
+      const end = s.shift.end_time.toISOString().slice(11, 16);
+      return {
+        id: s.id,
+        work_date: s.work_date.toISOString().slice(0, 10),
+        shift: {
+          id: s.shift.id,
+          name: s.shift.name,
+          start_time: start,
+          end_time: end,
+          is_overnight: end <= start,
+        },
+      };
+    });
+  }
+
+  /**
+   * Ca gần nhất CHƯA KẾT THÚC của nhân viên: đang diễn ra hoặc sắp tới.
+   * Không có ca nào thì trả null.
+   */
+
+  private employeeSelect() {
+    return {
+      id: true,
+      first_name: true,
+      last_name: true,
+      email: true,
+      phone: true,
+      position: true,
+      gender: true,
+      salary: true,
+      hired_date: true,
+      avatar_url: true,
+      account: {
+        select: {
+          id: true,
+          email: true,
+          is_active: true,
+          role_account: {
+            select: { role: { select: { name: true } } },
+          },
+        },
       },
-    }));
+    };
+  }
+
+  /** Giữ nguyên first_name và last_name — FE cần cả hai để hiện tên và chữ viết tắt */
+  private transformEmployee(employee: any): EmployeeResponseDto {
+    // Tách role_account ra khỏi account, phần còn lại (id, email, is_active) giữ nguyên
+    const { role_account, ...account } = employee.account;
+
+    return {
+      ...employee,
+      full_name: `${employee.last_name} ${employee.first_name}`, // có dấu cách
+      salary: Number(employee.salary), // Decimal -> number
+      account: {
+        ...account,
+        roles: role_account.map((ra: any) => ra.role.name), // flatten
+      },
+    };
+  }
+
+  /** Trang cá nhân dùng full_name cho tiện hiển thị, nhưng vẫn giữ hai trường gốc */
+  private transformProfile(employee: any): EmployeeProfileResponseDto {
+    const base = this.transformEmployee(employee);
+    return {
+      ...base,
+      full_name: `${employee.last_name} ${employee.first_name}`,
+    };
   }
 }

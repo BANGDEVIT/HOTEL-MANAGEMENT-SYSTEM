@@ -70,4 +70,45 @@ export class S3Service {
       }),
     );
   }
+
+  async uploadMultiple(
+    files: Express.Multer.File[],
+    folder: string,
+  ): Promise<string[]> {
+    if (files?.length) return;
+    // Kiểm tra toàn bộ trước khi upload — tránh trường hợp
+    // upload được 2 file rồi file thứ 3 sai định dạng, để lại rác trên S3
+    for (const file of files) {
+      if (!this.ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+        throw new BadRequestException(
+          `File ${file.originalname} không đúng định dạng. Chỉ nhận jpeg, png, webp`,
+        );
+      }
+      if (file.size > this.MAX_FILE_SIZE) {
+        throw new BadRequestException(`File ${file.originalname} vượt quá 5MB`);
+      }
+
+      const upLoaded: string[] = [];
+
+      try {
+        for (const file of files) {
+          const url = await this.uploadFile(file, folder);
+          upLoaded.push(url);
+        }
+        return upLoaded;
+      } catch (error) {
+        await Promise.allSettled(upLoaded.map((url) => this.deleteFile(url)));
+        throw error;
+      }
+    }
+  }
+
+  /** Xoá nhiều file, bỏ qua lỗi từng cái — dùng khi dọn ảnh cũ */
+  async deleteMultiple(urls: string[]): Promise<void> {
+    if (!urls?.length) return;
+    await Promise.allSettled(urls.map((url) => this.deleteFile(url)));
+  }
+
+  // Promise.all : (Fail-fast — dừng ngay, trả về reject với lỗi đầu tiên gặp phải) (Chỉ có giá trị nếu tất cả đều thành công)
+  // Promise.allSettled : (Vẫn chạy tiếp tất cả, không bị dừng) (Luôn trả về mảng kết quả của từng promise, dù thành công hay thất bại)
 }

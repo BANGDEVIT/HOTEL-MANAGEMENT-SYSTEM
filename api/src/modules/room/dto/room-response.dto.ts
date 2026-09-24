@@ -43,8 +43,8 @@ export class RoomResponseDto {
   @ApiProperty({ type: RoomTypeInRoomDto })
   room_type: RoomTypeInRoomDto;
 
-  // @ApiPropertyOptional({ example: ['url1', 'url2'] })
-  // images: string[];
+  @ApiPropertyOptional({ example: ['url1', 'url2'] })
+  images: string[];
 
   @ApiProperty({ example: '2026-05-12T00:00:00.000Z' })
   created_at: Date;

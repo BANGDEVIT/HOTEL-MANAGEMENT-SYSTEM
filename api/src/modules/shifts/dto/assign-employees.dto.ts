@@ -1,68 +1,60 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { DayOfWeek, ShiftName } from '@prisma/client';
-import { IsDateString, IsNotEmpty, IsUUID, IsArray } from 'class-validator';
+import {
+  ArrayNotEmpty,
+  ArrayUnique,
+  IsArray,
+  IsDateString,
+  IsUUID,
+  Matches,
+} from 'class-validator';
+import { ResponseShiftDto } from './response-shift.dto';
+
+export const YMD_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 export class AssignEmployeeDto {
   @ApiProperty({
-    example: ['uuid-123', 'uuid-456', 'uuid-789'],
-    description: 'Danh sách UUID của nhân viên',
     type: [String],
+    example: ['uuid-nhan-vien-1', 'uuid-nhan-vien-2'],
   })
-  @IsArray({ message: 'employee_ids phải là array' })
-  @IsUUID('4', { each: true, message: 'Employee ID không hợp lệ' })
-  @IsNotEmpty({ message: 'Danh sách nhân viên không được để trống' })
+  @IsArray()
+  @ArrayNotEmpty({ message: 'Phải chọn ít nhất 1 nhân viên' })
+  @ArrayUnique({ message: 'Danh sách nhân viên bị trùng' })
+  @IsUUID('all', { each: true, message: 'Mã nhân viên không hợp lệ' })
   employee_ids: string[];
 
-  @ApiProperty({
-    example: '2026-05-12',
-    description: 'Ngày làm việc (YYYY-MM-DD)',
-  })
-  @IsNotEmpty({ message: 'Ngày làm việc không được để trống' })
-  @IsDateString(
-    {},
-    { message: 'Ngày làm việc không đúng định dạng YYYY-MM-DD' },
-  )
+  @ApiProperty({ example: '2026-09-28', description: 'Ngày trực, YYYY-MM-DD' })
+  @Matches(YMD_REGEX, { message: 'Ngày trực phải có dạng YYYY-MM-DD' })
+  @IsDateString({}, { message: 'Ngày trực không hợp lệ' }) // chặn 2026-02-31
   work_date: string;
 }
 
 export class AssignedEmployeeDto {
-  @ApiProperty({ example: 'uuid-123' })
+  @ApiProperty()
   id: string;
 
-  @ApiProperty({ example: 'Nguyen Bang' })
+  @ApiProperty({ example: 'Nguyễn Thị Lan' })
   full_name: string;
 
-  @ApiProperty({ example: 'receptionist' })
+  @ApiProperty({ example: 'Lễ tân' })
   position: string;
-
-  @ApiProperty({ example: '2026-05-12' })
-  work_date: string;
 }
 
 export class AssignEmployeeResponseDto {
-  @ApiProperty({ example: 'uuid-123', description: 'ID của ca làm việc' })
-  shift_id: string;
+  @ApiProperty({ type: ResponseShiftDto })
+  shift: ResponseShiftDto;
 
-  @ApiProperty({ example: 'morning', enum: ShiftName })
-  shift_name: ShiftName;
-
-  @ApiProperty({ example: 'monday', enum: DayOfWeek })
-  day_of_week: DayOfWeek;
-
-  @ApiProperty({ example: '07:00' })
-  start_time: string;
-
-  @ApiProperty({ example: '11:00' })
-  end_time: string;
-
-  @ApiProperty({ example: '2026-05-12' })
+  @ApiProperty({ example: '2026-09-28' })
   work_date: string;
 
-  @ApiProperty({
-    example: 3,
-    description: 'Số nhân viên được phân công thành công',
-  })
+  @ApiProperty({ example: 2, description: 'Số người vừa được xếp mới' })
   total_assigned: number;
+
+  @ApiProperty({
+    example: 1,
+    description:
+      'Số người đã có sẵn trong ca này ngày này, bỏ qua không tạo lại',
+  })
+  skipped: number;
 
   @ApiProperty({ type: [AssignedEmployeeDto] })
   employees: AssignedEmployeeDto[];

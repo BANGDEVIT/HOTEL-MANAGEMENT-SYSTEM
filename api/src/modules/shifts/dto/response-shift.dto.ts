@@ -1,113 +1,88 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { DayOfWeek, ShiftName } from '@prisma/client';
+import { ShiftName } from '@prisma/client';
 
+/** 1 ca làm — dùng chung cho create / update / nằm lồng trong response khác */
 export class ResponseShiftDto {
-  @ApiProperty({ example: 'uuid-123' })
+  @ApiProperty({ example: '0f9c...' })
   id: string;
 
-  @ApiProperty({
-    example: 'morning',
-    enum: ShiftName,
-  })
+  @ApiProperty({ enum: ShiftName, example: ShiftName.morning })
   name: ShiftName;
 
-  @ApiProperty({
-    example: 'monday',
-    enum: DayOfWeek,
-  })
-  day_of_week: DayOfWeek;
-
-  @ApiProperty({ example: '07:00', description: 'Giờ bắt đầu (HH:mm)' })
+  @ApiProperty({ example: '06:00' })
   start_time: string;
 
-  @ApiProperty({ example: '11:00', description: 'Giờ kết thúc (HH:mm)' })
+  @ApiProperty({ example: '14:00' })
   end_time: string;
+
+  @ApiProperty({
+    example: false,
+    description: 'true khi end_time <= start_time, tức ca kéo qua nửa đêm',
+  })
+  is_overnight: boolean;
 }
 
-export class ShiftResponseDto {
-  @ApiProperty({ example: 'uuid-123' })
-  id: string;
-
-  @ApiProperty({ example: 'morning', enum: ShiftName })
-  name: ShiftName;
-
-  @ApiProperty({ example: 'monday', enum: DayOfWeek })
-  day_of_week: DayOfWeek;
-
-  @ApiProperty({ example: '07:00' })
-  start_time: string;
-
-  @ApiProperty({ example: '11:00' })
-  end_time: string;
-
-  @ApiProperty({ example: 3, description: 'Số nhân viên được phân công' })
-  total_employees: number;
+/** 1 dòng trong danh sách ca */
+export class ShiftListItemDto extends ResponseShiftDto {
+  @ApiProperty({
+    example: 12,
+    description: 'Số lượt phân công từ hôm nay trở đi',
+  })
+  upcoming_assignments: number;
 }
 
 export class PaginatedShiftResponseDto {
-  @ApiProperty({ type: [ShiftResponseDto] })
-  data: ShiftResponseDto[];
+  @ApiProperty({ type: [ShiftListItemDto] })
+  data: ShiftListItemDto[];
 
-  @ApiProperty({ example: 10 })
+  @ApiProperty({ example: 3 })
   total: number;
 
   @ApiProperty({ example: 1 })
   page: number;
 
-  @ApiProperty({ example: 10 })
+  @ApiProperty({ example: 20 })
   limit: number;
 
   @ApiProperty({ example: 1 })
   totalPages: number;
 }
 
-// Employee trong ca làm việc
-export class EmployeeInShiftDto {
-  @ApiProperty({ example: 'uuid-123' })
+/** Nhân viên được xếp vào ca, kèm ngày trực */
+export class ShiftEmployeeDto {
+  @ApiProperty()
   id: string;
 
-  @ApiProperty({ example: 'Nguyen Bang' })
+  @ApiProperty({ example: 'Nguyễn Thị Lan' })
   full_name: string;
 
-  @ApiProperty({ example: 'nva@gmail.com' })
-  email: string;
+  @ApiProperty({ example: 'lan@hotel.local', nullable: true })
+  email: string | null;
 
-  @ApiProperty({ example: '0909123456' })
+  @ApiProperty({ example: '0900000004' })
   phone: string;
 
-  @ApiProperty({ example: 'receptionist' })
+  @ApiProperty({ nullable: true })
+  avatar_url: string | null;
+
+  @ApiProperty({ example: 'Lễ tân' })
   position: string;
 
-  @ApiProperty({ example: 'male' })
+  @ApiProperty({ example: 'female' })
   gender: string;
 
-  @ApiProperty({
-    example: 'https://s3.amazonaws.com/bucket/avatar.jpg',
-    nullable: true,
-  })
-  avatar_url: string | null;
+  @ApiProperty({ example: '2026-09-28' })
+  work_date: string;
 }
 
-// Chi tiết ca làm việc
-export class ShiftDetailResponseDto {
-  @ApiProperty({ example: 'uuid-123' })
-  id: string;
+/** Chi tiết 1 ca: thông tin ca + danh sách phân công sắp tới */
+export class ShiftDetailResponseDto extends ResponseShiftDto {
+  @ApiProperty({ example: 5 })
+  total_upcoming: number;
 
-  @ApiProperty({ example: 'morning', enum: ShiftName })
-  name: ShiftName;
-
-  @ApiProperty({ example: 'monday', enum: DayOfWeek })
-  day_of_week: DayOfWeek;
-
-  @ApiProperty({ example: '07:00' })
-  start_time: string;
-
-  @ApiProperty({ example: '11:00' })
-  end_time: string;
-
-  @ApiProperty({ example: 3 })
-  total_employees: number;
-
-  @ApiProperty({ type: [EmployeeInShiftDto] })
-  employees: EmployeeInShiftDto[];
+  @ApiProperty({
+    type: [ShiftEmployeeDto],
+    description: 'Các lượt phân công từ hôm nay trở đi, sắp theo ngày',
+  })
+  upcoming: ShiftEmployeeDto[];
 }

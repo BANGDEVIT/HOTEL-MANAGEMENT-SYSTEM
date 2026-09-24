@@ -34,6 +34,8 @@ import { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { Public } from '../../common/decorators/public.decorator';
 import { QueryAvailableRoomDto } from './dto/query-available-room.dto';
+import { UpdateRoomImagesDto } from './dto/update-room-images.dto';
+import { RoomStatsDto } from './dto/room-stats.dto';
 
 @Controller('rooms')
 @ApiTags('rooms')
@@ -54,6 +56,7 @@ export class RoomController {
   async findAvailable(@Query() query: QueryAvailableRoomDto) {
     return this.roomService.findAvailable(query);
   }
+
   @Post()
   @HttpCode(201)
   @Roles('manager', 'admin')
@@ -109,6 +112,15 @@ export class RoomController {
   @ApiResponse({ status: 404, description: 'Không tìm thấy loại phòng' })
   async findAll(@Query() query: QueryRoomDto) {
     return this.roomService.findAll(query);
+  }
+
+  @Get('stats')
+  @HttpCode(200)
+  @Roles('staff', 'manager', 'admin')
+  @ApiOperation({ summary: 'Đếm phòng theo trạng thái trên toàn khách sạn' })
+  @ApiResponse({ status: 200, type: RoomStatsDto })
+  getStats(): Promise<RoomStatsDto> {
+    return this.roomService.getStats();
   }
 
   @Get(':id')
@@ -172,6 +184,28 @@ export class RoomController {
     return this.roomService.updateStatus(id, updateRoomStatus);
   }
 
+  @Patch(':id/images')
+  @HttpCode(200)
+  @Roles('manager', 'admin')
+  @ApiOperation({
+    summary: 'Sắp xếp hoặc xoá ảnh phòng',
+    description:
+      'Gửi danh sách ảnh cuối cùng. Ảnh không còn trong danh sách sẽ bị xoá khỏi S3.',
+  })
+  @ApiParam({ name: 'id', example: 'uuid-123' })
+  @ApiResponse({ status: 200, type: RoomResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'Danh sách chứa ảnh không thuộc phòng này',
+  })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy phòng' })
+  async updateImages(
+    @Param('id') id: string,
+    @Body() dto: UpdateRoomImagesDto,
+  ): Promise<RoomResponseDto> {
+    return this.roomService.updateImages(id, dto);
+  }
+
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
   @Roles('manager', 'admin')
@@ -206,6 +240,27 @@ export class RoomController {
   })
   update(@Param('id') id: string, @Body() updateRoomDto: UpdateRoomDto) {
     return this.roomService.update(id, updateRoomDto);
+  }
+
+  @Delete(':id/images')
+  @HttpCode(200)
+  @Roles('manager', 'admin')
+  @ApiOperation({ summary: 'Xóa ảnh của phòng' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        imageUrls: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Xóa ảnh thành công' })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy phòng' })
+  async removeImages(
+    @Param('id') id: string,
+    @Body() body: { imageUrls: string[] },
+  ) {
+    return this.roomService.removeImages(id, body.imageUrls);
   }
 
   @Delete(':id')
@@ -255,6 +310,12 @@ export class RoomController {
   @Post(':id/images')
   @HttpCode(201)
   @Roles('manager', 'admin')
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      // storage: memoryStorage(), // giữ file trong RAM để có file.buffer cho S3
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -267,7 +328,12 @@ export class RoomController {
       },
     },
   })
-  @ApiOperation({ summary: 'Thêm ảnh cho phòng' })
+  @ApiOperation({
+    summary: 'Thêm ảnh cho phòng',
+    description:
+      'Tải lên tối đa 10 ảnh một lần, mỗi ảnh dưới 5MB, định dạng jpeg/png/webp',
+  })
+  @ApiParam({ name: 'id', example: 'uuid-123' })
   @ApiResponse({ status: 201, description: 'Thêm ảnh thành công' })
   @ApiResponse({ status: 404, description: 'Không tìm thấy phòng' })
   @UseInterceptors(
@@ -277,27 +343,6 @@ export class RoomController {
     @Param('id') id: string,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
-    return this.roomService.addImages(id, files);
-  }
-
-  @Delete(':id/images')
-  @HttpCode(200)
-  @Roles('manager', 'admin')
-  @ApiOperation({ summary: 'Xóa ảnh của phòng' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        imageUrls: { type: 'array', items: { type: 'string' } },
-      },
-    },
-  })
-  @ApiResponse({ status: 200, description: 'Xóa ảnh thành công' })
-  @ApiResponse({ status: 404, description: 'Không tìm thấy phòng' })
-  async removeImages(
-    @Param('id') id: string,
-    @Body() body: { imageUrls: string[] },
-  ) {
-    return this.roomService.removeImages(id, body.imageUrls);
+    return this.roomService.addImagesV2(id, files);
   }
 }

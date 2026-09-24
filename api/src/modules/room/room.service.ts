@@ -12,12 +12,14 @@ import {
   RoomResponseDto,
 } from './dto/room-response.dto';
 import { QueryRoomDto } from './dto/query-room.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, RoomStatus } from '@prisma/client';
 import { Amenity } from '../room-type/dto/create-room-type.dto';
 import { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import { S3Service } from '../../common/s3/s3.service';
 import { QueryAvailableRoomDto } from './dto/query-available-room.dto';
 import { RedisService } from '../../common/redis/redis.service';
+import { UpdateRoomImagesDto } from './dto/update-room-images.dto';
+import { RoomStatsDto } from './dto/room-stats.dto';
 
 @Injectable()
 export class RoomService {
@@ -26,6 +28,8 @@ export class RoomService {
     private s3Service: S3Service,
     private redis: RedisService,
   ) {}
+
+  private readonly MAX_IMAGES_PER_ROOM = 10;
   async create(createRoomDto: CreateRoomDto): Promise<RoomResponseDto> {
     const { room_number, room_type_id, floor } = createRoomDto;
 
@@ -57,7 +61,7 @@ export class RoomService {
         room_type_id,
         room_number,
         floor,
-        // images: [], ← thêm sau khi setup AWS S3
+        images: [],
       },
       select: {
         id: true,
@@ -82,6 +86,7 @@ export class RoomService {
 
     return {
       ...newRoom,
+      images: (newRoom.images as string[]) ?? [],
       room_type: {
         ...newRoom.room_type,
         base_price: Number(newRoom.room_type.base_price),
@@ -146,25 +151,7 @@ export class RoomService {
         where,
         take: limit,
         skip,
-        select: {
-          id: true,
-          room_number: true,
-          floor: true,
-          status: true,
-          created_at: true,
-          updated_at: true,
-          images: true,
-          room_type: {
-            select: {
-              id: true,
-              name: true,
-              base_price: true,
-              capacity: true,
-              bed_type: true,
-              amenities: true,
-            },
-          },
-        },
+        select: this.roomSelect(),
         orderBy,
       }),
 
@@ -173,6 +160,7 @@ export class RoomService {
 
     const rooms = roomsRaw.map((r) => ({
       ...r,
+      images: (r.images as string[]) ?? [],
       room_type: {
         ...r.room_type,
         base_price: Number(r.room_type.base_price),
@@ -341,6 +329,39 @@ export class RoomService {
 
     return this.transformRoom(updateRoom);
   }
+
+  /**
+   * Đếm phòng theo trạng thái trên TOÀN khách sạn.
+   * Không nhận filter nào -> lọc danh sách thế nào con số cũng không đổi.
+   */
+  async getStats(): Promise<RoomStatsDto> {
+    // SELECT status, COUNT(*) FROM "Room" GROUP BY status
+    const grouped = await this.prisma.room.groupBy({
+      by: ['status'],
+      _count: { _all: true },
+    });
+
+    // Khởi tạo đủ 5 trạng thái = 0: trạng thái nào không có phòng
+    // thì GROUP BY không trả về dòng đó, FE vẫn cần số 0
+    const stats: Record<RoomStatus, number> = {
+      available: 0,
+      occupied: 0,
+      cleaning: 0,
+      maintenance: 0,
+      inactive: 0,
+    };
+
+    for (const g of grouped) {
+      stats[g.status] = g._count._all;
+    }
+
+    return {
+      ...stats,
+      // Phòng đã ẩn không tính vào tổng phòng đang kinh doanh
+      total:
+        stats.available + stats.occupied + stats.cleaning + stats.maintenance,
+    };
+  }
   async remove(id: string): Promise<void> {
     const room = await this.prisma.room.findUnique({
       where: { id },
@@ -428,6 +449,80 @@ export class RoomService {
     return this.findOne(id);
   }
 
+  /** Thêm ảnh mới vào cuối danh sách hiện có */
+  async addImagesV2(
+    id: string,
+    files: Express.Multer.File[],
+  ): Promise<RoomResponseDto> {
+    if (!files?.length) {
+      throw new BadRequestException('Chưa chọn ảnh nào');
+    }
+
+    const room = await this.prisma.room.findUnique({
+      where: { id },
+      select: { id: true, images: true },
+    });
+
+    if (!room) throw new NotFoundException('Không tìm thấy phòng');
+
+    const current = (room.images as string[]) ?? [];
+    if (current.length + files.length > this.MAX_IMAGES_PER_ROOM) {
+      throw new BadRequestException(
+        `Mỗi phòng tối đa ${this.MAX_IMAGES_PER_ROOM} ảnh. Hiện có ${current.length}.`,
+      );
+    }
+
+    const newUrls = await this.s3Service.uploadMultiple(files, 'rooms');
+    const updated = await this.prisma.room.update({
+      where: { id },
+      data: { images: { ...current, ...newUrls } },
+      select: this.roomSelect(),
+    });
+
+    await this.redis.delByPattern('rooms:');
+    return this.transformRoom(updated);
+  }
+
+  async updateImages(
+    id: string,
+    dto: UpdateRoomImagesDto,
+  ): Promise<RoomResponseDto> {
+    const room = await this.prisma.room.findUnique({
+      where: { id },
+      select: { id: true, images: true },
+    });
+
+    if (!room) throw new NotFoundException('Không tìm thấy phòng');
+
+    const current = (room.images as string[]) ?? [];
+    const next = dto.images;
+
+    // Chặn URL lạ — chỉ cho phép sắp xếp hoặc bớt ảnh đã có,
+    // không cho gán URL tuỳ ý từ bên ngoài
+    const isValid = next.filter((i) => !current.includes(i));
+    if (isValid.length > 0) {
+      throw new BadRequestException(
+        'Danh sách chứa ảnh không thuộc phòng này. Dùng endpoint thêm ảnh để tải ảnh mới.',
+      );
+    }
+
+    const removed = current.filter((i) => !next.includes(i));
+
+    const updated = await this.prisma.room.update({
+      where: { id: room.id },
+      data: { images: next },
+      select: this.roomSelect(),
+    });
+
+    // Xoá file thừa sau khi DB đã cập nhật xong — nếu bước này lỗi
+    // thì chỉ còn file mồ côi trên S3, dữ liệu vẫn đúng
+
+    await this.s3Service.deleteMultiple(removed);
+    await this.redis.delByPattern('rooms:');
+
+    return this.transformRoom(updated);
+  }
+
   // ============================HELPER======================================
 
   private roomSelect() {
@@ -438,7 +533,7 @@ export class RoomService {
       status: true,
       created_at: true,
       updated_at: true,
-      // images: true,
+      images: true,
       room_type: {
         select: {
           id: true,
@@ -455,6 +550,7 @@ export class RoomService {
   private transformRoom(room: any): RoomResponseDto {
     return {
       ...room,
+      images: (room.images as string[]) ?? [],
       room_type: {
         ...room.room_type,
         base_price: Number(room.room_type.base_price),

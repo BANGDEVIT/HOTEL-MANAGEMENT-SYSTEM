@@ -1,6 +1,15 @@
 // create-room.dto.ts
-import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsString, IsUUID, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsArray,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUrl,
+  IsUUID,
+  Min,
+} from 'class-validator';
 
 export class CreateRoomDto {
   @ApiProperty({ example: 'A01', description: 'Số phòng' })
@@ -19,9 +28,9 @@ export class CreateRoomDto {
   @Min(1, { message: 'Số tầng phải lớn hơn 0' })
   floor: number;
 
-  // @ApiPropertyOptional({ example: ['url1', 'url2'] })
-  // @IsOptional()
-  // @IsArray()
-  // @IsUrl({}, { each: true })
-  // images?: string[];
+  @ApiPropertyOptional({ example: ['url1', 'url2'] })
+  @IsOptional()
+  @IsArray()
+  @IsUrl({}, { each: true })
+  images?: string[];
 }

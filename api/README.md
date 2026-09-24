@@ -434,6 +434,73 @@ Khách có tài khoản, lịch sử booking giữ nguyên
 
 ---
 
+# Phân quyền theo Role — Sidebar & Menu
+
+> Bổ sung cho `README.md` chính — phần mô tả UI/FE, đặt sau mục "Phân quyền" (API-level) đã có.
+
+## Nguyên tắc phân quyền 2 tầng
+
+```
+Tầng 1 — BE (RolesGuard + @Roles(...))
+  → Chốt chặn THẬT SỰ, không thể bypass
+  → Áp dụng cho từng endpoint cụ thể
+
+Tầng 2 — FE (ProtectedRoute allowedRoles + Sidebar filterByRole)
+  → Chỉ để trải nghiệm tốt hơn (ẩn menu không có quyền,
+    chặn sớm trước khi gọi API)
+  → KHÔNG thay thế được Tầng 1 — FE luôn có thể bị bypass
+    qua DevTools/Postman, nên BE luôn phải tự kiểm tra lại
+```
+
+## Bảng phân quyền menu Admin Dashboard
+
+| Menu        | Route         | admin | manager | staff | Ghi chú                                   |
+| ----------- | ------------- | :---: | :-----: | :---: | ----------------------------------------- |
+| Tổng quan   | `/dashboard`  |  ✅   |   ✅    |  ✅   |                                           |
+| Nhân viên   | `/employees`  |  ✅   |   ✅    |  ❌   | Nhạy cảm: lương, tuyển/sa thải            |
+| Ca làm việc | `/shifts`     |  ✅   |   ✅    |  ✅   | Staff cần xem lịch ca của mình            |
+| Loại phòng  | `/room-types` |  ✅   |   ✅    |  ❌   | Cấu hình giá — chỉ manager+               |
+| Dịch vụ     | `/services`   |  ✅   |   ✅    |  ❌   | Cấu hình giá dịch vụ — chỉ manager+       |
+| Phòng       | `/rooms`      |  ✅   |   ✅    |  ✅   | Việc hàng ngày: đổi trạng thái phòng      |
+| Khách hàng  | `/customers`  |  ✅   |   ✅    |  ✅   | Tạo walk-in guest, tra cứu                |
+| Đặt phòng   | `/bookings`   |  ✅   |   ✅    |  ✅   | Việc hàng ngày: check-in/out              |
+| Hoá đơn     | `/invoices`   |  ✅   |   ✅    |  ✅   | Staff xem để thu tiền, KHÔNG sửa discount |
+| Thanh toán  | `/payments`   |  ✅   |   ✅    |  ✅   | Staff trực tiếp nhận tiền khách           |
+| Hồ sơ       | `/profile`    |  ✅   |   ✅    |  ✅   | Ai đăng nhập cũng thấy                    |
+
+**Lưu ý quan trọng:** bảng trên là "menu nào **hiện ra**" — không đồng nghĩa với "action nào được **phép làm**" bên trong trang đó. Ví dụ: staff thấy và vào được `/invoices`, nhưng nút "Sửa discount" bên trong vẫn chỉ `manager`/`admin` bấm được (khớp với `@Roles('manager', 'admin')` trên `PATCH /invoices/:id/discount` ở BE).
+
+## Cấu trúc nhóm sidebar
+
+```
+QUẢN TRỊ (điều hành — chủ yếu admin/manager)
+  ├── Tổng quan
+  ├── Nhân viên
+  ├── Ca làm việc
+  ├── Loại phòng
+  └── Dịch vụ
+
+VẬN HÀNH (việc hàng ngày — staff cũng thấy)
+  ├── Phòng
+  ├── Khách hàng
+  ├── Đặt phòng
+  ├── Hoá đơn
+  └── Thanh toán
+
+TÀI KHOẢN (ai đăng nhập cũng thấy)
+  └── Hồ sơ
+  └── Đăng xuất
+```
+
+## Vai trò công việc thực tế (căn cứ để phân quyền)
+
+| Role       | Mô tả công việc                                                                                                                                |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin`    | Toàn quyền hệ thống, không giới hạn                                                                                                            |
+| `manager`  | Điều hành vận hành: quản nhân sự, xếp ca, cấu hình giá phòng/dịch vụ, xem báo cáo                                                              |
+| `staff`    | Lễ tân/trực ca: check-in/out, đặt phòng hộ khách, đổi trạng thái phòng, thu tiền — không có quyền với thông tin nhạy cảm (lương, giá cấu hình) |
+| `customer` | Chỉ thấy khu vực riêng (đặt phòng, lịch sử, hồ sơ cá nhân), tách biệt hoàn toàn khỏi Admin dashboard                                           |
+
 ## 📝 Ghi chú
 
 - Access token có thời hạn **15 phút**

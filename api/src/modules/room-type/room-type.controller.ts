@@ -29,7 +29,7 @@ import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('room-types')
 @ApiBearerAuth('JWT-auth')
-@Controller('room-type')
+@Controller('room-types')
 export class RoomTypeController {
   constructor(private readonly roomTypeService: RoomTypeService) {}
 
