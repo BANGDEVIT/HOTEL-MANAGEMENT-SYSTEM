@@ -21,6 +21,7 @@ import { UpdatePasswordDto } from './dto/reset-password.dto';
 import { QueryProfileShiftDto } from './dto/profile-employee.dto';
 import { S3Service } from '../../common/s3/s3.service';
 import { Prisma } from '@prisma/client';
+import { NextShiftDto } from './dto/next-shift.dto';
 
 @Injectable()
 export class EmployeeService {
@@ -431,6 +432,70 @@ export class EmployeeService {
    * Ca gần nhất CHƯA KẾT THÚC của nhân viên: đang diễn ra hoặc sắp tới.
    * Không có ca nào thì trả null.
    */
+  async getNextShift(accountId: string): Promise<NextShiftDto | null> {
+    const employee = await this.prisma.employee.findUnique({
+      where: { account_id: accountId },
+      select: { id: true },
+    });
+    if (!employee) {
+      throw new NotFoundException('Không tìm thấy nhân viên');
+    }
+
+    // Lấy từ HÔM QUA: ca đêm hôm qua (22:00 -> 06:00) có thể vẫn đang diễn ra lúc 3 giờ sáng nay
+    const todayYmd = new Date().toLocaleDateString('sv-SE', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+    });
+    const yesterday = new Date(`${todayYmd}T00:00:00Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+
+    const rows = await this.prisma.employeeShift.findMany({
+      where: { employee_id: employee.id, work_date: { gte: yesterday } },
+      // Mỗi người tối đa 1 ca/ngày -> 3 dòng đầu chắc chắn chứa ca cần tìm:
+      // hôm qua (có thể đã xong), ca kế tiếp, và 1 ca dự phòng
+      orderBy: { work_date: 'asc' },
+      take: 3,
+      select: {
+        id: true,
+        work_date: true,
+        shift: {
+          select: { id: true, name: true, start_time: true, end_time: true },
+        },
+      },
+    });
+
+    const now = Date.now();
+
+    for (const r of rows) {
+      const ymd = r.work_date.toISOString().slice(0, 10);
+      const start = r.shift.start_time.toISOString().slice(11, 16);
+      const end = r.shift.end_time.toISOString().slice(11, 16);
+      const overnight = end <= start;
+
+      // Giờ ca là giờ Việt Nam -> gắn "+07:00" để ra đúng thời điểm thật
+      const startsAt = new Date(`${ymd}T${start}:00+07:00`);
+      const endsAt = new Date(`${ymd}T${end}:00+07:00`);
+      if (overnight) endsAt.setUTCDate(endsAt.getUTCDate() + 1);
+
+      if (endsAt.getTime() <= now) continue; // ca đã xong -> xét ca kế
+
+      return {
+        id: r.id,
+        work_date: ymd,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        status: startsAt.getTime() <= now ? 'ongoing' : 'upcoming',
+        shift: {
+          id: r.shift.id,
+          name: r.shift.name,
+          start_time: start,
+          end_time: end,
+          is_overnight: overnight,
+        },
+      };
+    }
+
+    return null;
+  }
 
   private employeeSelect() {
     return {

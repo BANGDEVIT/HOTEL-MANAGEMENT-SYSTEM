@@ -35,6 +35,7 @@ import { GetAccount } from '../../common/decorators/get-account.decorator';
 import { UpdatePasswordDto } from './dto/reset-password.dto';
 import { QueryProfileShiftDto } from './dto/profile-employee.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { NextShiftDto } from './dto/next-shift.dto';
 
 @ApiTags('employees')
 @ApiBearerAuth('JWT-auth')
@@ -179,6 +180,20 @@ export class EmployeeController {
     @Query() query: QueryProfileShiftDto,
   ) {
     return this.employeeService.getProfileShifts(accountId, query);
+  }
+
+  @Get('profile/next-shift')
+  @HttpCode(200)
+  @Roles('staff', 'admin', 'manager')
+  @ApiOperation({
+    summary: 'Ca gần nhất chưa kết thúc của tôi',
+    description: 'Ca đang diễn ra hoặc sắp tới. Không có ca nào thì trả null',
+  })
+  @ApiResponse({ status: 200, type: NextShiftDto })
+  getNextShift(
+    @GetAccount('sub') accountId: string,
+  ): Promise<NextShiftDto | null> {
+    return this.employeeService.getNextShift(accountId);
   }
 
   @Patch('profile/password')
