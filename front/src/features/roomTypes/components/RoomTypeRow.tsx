@@ -82,16 +82,14 @@ export default function RoomTypeRow({ roomType, onEdit }: Props) {
 
   return (
     <div
-      className={`grid items-center gap-3.5 min-h-[68px] px-4 border-b border-[#F0F1F3] last:border-b-0 hover:bg-[#F5F6F7] transition-colors
+      className={`grid items-center gap-3.5 min-h-[68px] px-4 border-b border-line-soft last:border-b-0 hover:bg-row-hover transition-colors
         ${hidden ? "opacity-60" : ""}`}
       style={{ gridTemplateColumns: ROOM_TYPE_GRID }}
     >
       {/* 1. Tên + giường, sức chứa */}
       <div className="min-w-0">
-        <p className="text-[15px] font-medium text-[#14181D] truncate">
-          {roomType.name}
-        </p>
-        <p className="text-[12px] text-[#5C6672] mt-0.5">
+        <p className="text-[15px] font-medium text-ink truncate">{roomType.name}</p>
+        <p className="text-[12px] text-ink-secondary mt-0.5">
           {BED_TYPE_LABELS[roomType.bed_type]}, {roomType.capacity} khách
         </p>
       </div>
@@ -104,10 +102,10 @@ export default function RoomTypeRow({ roomType, onEdit }: Props) {
 
       {/* 4. Giá */}
       <div className="text-right">
-        <p className="text-[16px] font-medium text-[#14181D] tabular-nums">
+        <p className="text-[16px] font-medium text-ink tabular-nums">
           {roomType.base_price.toLocaleString("vi-VN")}
         </p>
-        <p className="text-[11px] text-[#98A1AC]">đồng</p>
+        <p className="text-[11px] text-ink-muted">đồng</p>
       </div>
 
       {/* 5. Menu */}
@@ -116,7 +114,7 @@ export default function RoomTypeRow({ roomType, onEdit }: Props) {
           ref={btnRef}
           onClick={() => setMenuOpen((o) => !o)}
           aria-label={`Thao tác với ${roomType.name}`}
-          className="w-7 h-7 flex items-center justify-center rounded text-[#98A1AC] hover:bg-[#E4E6E9] hover:text-[#14181D]"
+          className="w-7 h-7 flex items-center justify-center rounded text-ink-muted hover:bg-[#E4E6E9] hover:text-ink"
         >
           <MoreHorizontal
             size={15}
@@ -135,28 +133,28 @@ export default function RoomTypeRow({ roomType, onEdit }: Props) {
                 width: MENU_WIDTH,
                 visibility: pos ? "visible" : "hidden",
               }}
-              className="z-50 bg-white border border-[#E4E6E9] rounded-lg overflow-hidden shadow-[0_4px_12px_rgba(20,24,29,.10)]"
+              className="z-50 bg-white border border-line rounded-lg overflow-hidden shadow-[0_4px_12px_rgba(20,24,29,.10)]"
             >
               <button
                 onClick={() => {
                   onEdit(roomType);
                   setMenuOpen(false);
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#14181D] hover:bg-[#F5F6F7]"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-ink hover:bg-row-hover"
               >
                 <Pencil
                   size={13}
                   strokeWidth={1.75}
-                  className="text-[#98A1AC]"
+                  className="text-ink-muted"
                 />
                 Sửa loại phòng
               </button>
 
               {!hidden && (
-                <div className="border-t border-[#F0F1F3]">
+                <div className="border-t border-line-soft">
                   {confirming ? (
                     <div className="p-2.5">
-                      <p className="text-[11px] text-[#5C6672] mb-2 leading-snug">
+                      <p className="text-[11px] text-ink-secondary mb-2 leading-snug">
                         {stats?.total
                           ? `Loại này đang có ${stats.total} phòng. BE sẽ không cho ẩn khi còn phòng.`
                           : `Ẩn ${roomType.name} khỏi danh sách đang bán?`}
@@ -165,13 +163,13 @@ export default function RoomTypeRow({ roomType, onEdit }: Props) {
                         <button
                           disabled={busy}
                           onClick={handleHide}
-                          className="flex-1 h-7 rounded-md bg-[#B4321F] text-white text-[11px] font-medium disabled:opacity-60"
+                          className="flex-1 h-7 rounded-md bg-destructive text-white text-[11px] font-medium disabled:opacity-60"
                         >
                           Ẩn
                         </button>
                         <button
                           onClick={() => setConfirming(false)}
-                          className="flex-1 h-7 rounded-md border border-[#E4E6E9] text-[11px] text-[#5C6672]"
+                          className="flex-1 h-7 rounded-md border border-line text-[11px] text-ink-secondary"
                         >
                           Huỷ
                         </button>

@@ -95,13 +95,13 @@ export default function RoomForm({ open, onClose, room }: Props) {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="bg-white rounded-[10px] w-[420px] max-w-full shadow-[0_8px_24px_rgba(20,24,29,.12)]">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#E4E6E9]">
-          <h2 className="text-[14px] font-semibold text-[#14181D]">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-line">
+          <h2 className="text-[14px] font-semibold text-ink">
             {isEdit ? `Sửa phòng ${room!.room_number}` : "Thêm phòng"}
           </h2>
           <button
             onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded text-[#98A1AC] hover:bg-[#F5F6F7]"
+            className="w-7 h-7 flex items-center justify-center rounded text-ink-muted hover:bg-row-hover"
           >
             <X
               size={15}
@@ -123,7 +123,7 @@ export default function RoomForm({ open, onClose, room }: Props) {
                 {...register("room_number")}
                 placeholder="101"
                 autoFocus
-                className="w-full h-9 px-3 border border-[#E4E6E9] rounded-md text-[13px] outline-none focus:border-[#1B3A5C] focus:ring-2 focus:ring-[#1B3A5C]/10"
+                className="w-full h-9 px-3 border border-line rounded-md text-[13px] outline-none focus:border-navy-700 focus:ring-2 focus:ring-[#1B3A5C]/10"
               />
             </Field>
           )}
@@ -159,22 +159,22 @@ export default function RoomForm({ open, onClose, room }: Props) {
               type="number"
               min={1}
               {...register("floor")}
-              className="w-full h-9 px-3 border border-[#E4E6E9] rounded-md text-[13px] outline-none focus:border-[#1B3A5C] focus:ring-2 focus:ring-[#1B3A5C]/10"
+              className="w-full h-9 px-3 border border-line rounded-md text-[13px] outline-none focus:border-navy-700 focus:ring-2 focus:ring-[#1B3A5C]/10"
             />
           </Field>
 
-          <div className="flex gap-2 justify-end pt-3 border-t border-[#E4E6E9]">
+          <div className="flex gap-2 justify-end pt-3 border-t border-line">
             <button
               type="button"
               onClick={onClose}
-              className="h-9 px-4 rounded-md border border-[#E4E6E9] text-[13px] text-[#14181D] hover:bg-[#F5F6F7]"
+              className="h-9 px-4 rounded-md border border-line text-[13px] text-ink hover:bg-row-hover"
             >
               Huỷ
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="h-9 px-4 rounded-md bg-[#1B3A5C] text-white text-[13px] font-medium hover:bg-[#0F2440] disabled:opacity-60"
+              className="h-9 px-4 rounded-md bg-navy-700 text-white text-[13px] font-medium hover:bg-navy-hover disabled:opacity-60"
             >
               {isSubmitting ? "Đang lưu" : isEdit ? "Lưu thay đổi" : "Tạo phòng"}
             </button>
@@ -196,7 +196,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-[12px] font-medium text-[#14181D] mb-1.5">
+      <label className="block text-[12px] font-medium text-ink mb-1.5">
         {label}
       </label>
       {children}

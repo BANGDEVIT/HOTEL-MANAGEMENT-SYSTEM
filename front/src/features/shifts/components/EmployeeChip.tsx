@@ -27,7 +27,7 @@ export function EmployeeAvatar({ name, url, size = 20 }: AvatarProps) {
 
   return (
     <span
-      className="rounded-full bg-[#1B3A5C] text-white font-semibold flex items-center justify-center shrink-0"
+      className="rounded-full bg-navy-700 text-white font-semibold flex items-center justify-center shrink-0"
       style={{ width: size, height: size, fontSize: Math.round(size * 0.45) }}
     >
       {initialsOf(name)}
@@ -51,7 +51,7 @@ export default function EmployeeChip({ item, onRemove, highlight = false }: Prop
       className={`group/chip flex items-center gap-1.5 h-7 pl-[3px] pr-1 mb-1 rounded-[5px] border ${
         highlight
           ? "border-[#C9A84C] bg-[#FFF9EC]"
-          : "border-[#E4E6E9] bg-white hover:border-[#CDD2D8]"
+          : "border-line bg-white hover:border-line-input"
       }`}
     >
       <EmployeeAvatar
@@ -59,7 +59,7 @@ export default function EmployeeChip({ item, onRemove, highlight = false }: Prop
         url={employee.avatar_url}
       />
       <span
-        className={`flex-1 min-w-0 truncate text-[11.5px] text-[#14181D] ${highlight ? "font-medium" : ""}`}
+        className={`flex-1 min-w-0 truncate text-[11.5px] text-ink ${highlight ? "font-medium" : ""}`}
       >
         {employee.full_name}
       </span>
@@ -71,7 +71,7 @@ export default function EmployeeChip({ item, onRemove, highlight = false }: Prop
           // để không thành "Uncaught (in promise)" trên console
           onClick={() => onRemove(item).catch(() => {})}
           aria-label={`Gỡ ${employee.full_name} khỏi ca`}
-          className="w-5 h-5 shrink-0 rounded flex items-center justify-center text-[#98A1AC] opacity-0 group-hover/chip:opacity-100 focus-visible:opacity-100 hover:bg-[#FDF4F2] hover:text-[#B4321F]"
+          className="w-5 h-5 shrink-0 rounded flex items-center justify-center text-ink-muted opacity-0 group-hover/chip:opacity-100 focus-visible:opacity-100 hover:bg-[#FDF4F2] hover:text-[#B4321F]"
         >
           <X
             size={12}

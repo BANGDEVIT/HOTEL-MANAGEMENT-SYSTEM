@@ -17,7 +17,7 @@ export default function ProfilePage() {
   // defaultValues của useForm chỉ đọc 1 lần, render sớm thì form bị kẹt ở giá trị rỗng
   if (!profile) {
     return (
-      <div className="bg-white border border-[#E4E6E9] rounded-[10px] py-16 text-center text-[13px] text-[#98A1AC]">
+      <div className="bg-white border border-line rounded-[10px] py-16 text-center text-[13px] text-ink-muted">
         {loading ? "Đang tải hồ sơ" : "Không tải được hồ sơ"}
       </div>
     );
@@ -26,10 +26,10 @@ export default function ProfilePage() {
   return (
     <div className="max-w-[1040px]">
       <div className="mb-4">
-        <h1 className="text-[19px] font-semibold text-[#14181D] tracking-[-0.01em]">
+        <h1 className="text-[19px] font-semibold text-ink tracking-[-0.01em]">
           Hồ sơ
         </h1>
-        <p className="text-[12px] text-[#98A1AC] mt-0.5">
+        <p className="text-[12px] text-ink-muted mt-0.5">
           Thông tin tài khoản của bạn
         </p>
       </div>
@@ -38,7 +38,7 @@ export default function ProfilePage() {
       <div className="grid gap-4 items-start lg:grid-cols-[300px_minmax(0,1fr)]">
         <IdentityCard profile={profile} />
 
-        <div className="bg-white border border-[#E4E6E9] rounded-[10px] overflow-hidden">
+        <div className="bg-white border border-line rounded-[10px] overflow-hidden">
           <ProfileInfoForm
             key={profile.id}
             profile={profile}

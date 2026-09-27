@@ -61,26 +61,26 @@ export default function RoomTypeManagement() {
   return (
     <div>
       {/* Khung chính — không overflow-hidden để popup và menu tràn ra được */}
-      <div className="relative bg-white border border-[#E4E6E9] rounded-[10px]">
+      <div className="relative bg-white border border-line rounded-[10px]">
         {/* Thanh tải — bọc riêng để bo góc trên khớp viền khung */}
         <div className="absolute inset-x-0 top-0 h-[2px] overflow-hidden rounded-t-[10px] z-10">
           <LoadingBar active={loading} />
         </div>
 
         {/* ── Tiêu đề ─────────────────────────────────── */}
-        <div className="px-5 py-4 flex items-start justify-between border-b border-[#E4E6E9]">
+        <div className="px-5 py-4 flex items-start justify-between border-b border-line">
           <div>
-            <h1 className="text-[19px] font-semibold text-[#14181D] tracking-[-0.01em]">
+            <h1 className="text-[19px] font-semibold text-ink tracking-[-0.01em]">
               Loại phòng
             </h1>
-            <p className="text-[12px] text-[#98A1AC] mt-0.5 tabular-nums">
+            <p className="text-[12px] text-ink-muted mt-0.5 tabular-nums">
               {firstLoad ? "Đang tải loại phòng…" : `${active.length} loại đang bán`}
             </p>
           </div>
 
           <button
             onClick={openCreate}
-            className="h-[34px] px-3.5 rounded-md bg-[#1B3A5C] text-white text-[13px] font-medium hover:bg-[#0F2440] flex items-center gap-1.5"
+            className="h-[34px] px-3.5 rounded-md bg-navy-700 text-white text-[13px] font-medium hover:bg-navy-hover flex items-center gap-1.5"
           >
             <Plus
               size={14}
@@ -91,18 +91,18 @@ export default function RoomTypeManagement() {
         </div>
 
         {/* ── Tìm kiếm ────────────────────────────────── */}
-        <div className="px-5 py-2.5 border-b border-[#E4E6E9] flex items-center gap-1.5">
-          <div className="flex items-center gap-2 h-7 px-2.5 border border-[#E4E6E9] rounded-md w-[240px] focus-within:border-[#1B3A5C]">
+        <div className="px-5 py-2.5 border-b border-line flex items-center gap-1.5">
+          <div className="flex items-center gap-2 h-7 px-2.5 border border-line rounded-md w-[240px] focus-within:border-navy-700">
             <Search
               size={13}
               strokeWidth={1.75}
-              className="text-[#98A1AC] shrink-0"
+              className="text-ink-muted shrink-0"
             />
             <input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Tên loại phòng"
-              className="text-[12px] outline-none w-full text-[#14181D] bg-transparent"
+              className="text-[12px] outline-none w-full text-ink bg-transparent"
             />
           </div>
 
@@ -110,7 +110,7 @@ export default function RoomTypeManagement() {
             <button
               onClick={clearSearch}
               aria-label="Bỏ tìm kiếm"
-              className="h-7 w-7 flex items-center justify-center border border-[#E4E6E9] rounded-md text-[#98A1AC] hover:text-[#14181D] hover:bg-[#F5F6F7]"
+              className="h-7 w-7 flex items-center justify-center border border-line rounded-md text-ink-muted hover:text-ink hover:bg-row-hover"
             >
               <X
                 size={13}
@@ -137,7 +137,7 @@ export default function RoomTypeManagement() {
           >
             {/* Hàng tiêu đề cột — dùng chung GRID với RoomTypeRow */}
             <div
-              className="grid items-center gap-3.5 h-[38px] px-4 bg-[#FAFBFB] border-b border-[#E4E6E9] text-[12px] text-[#98A1AC]"
+              className="grid items-center gap-3.5 h-[38px] px-4 bg-[#FAFBFB] border-b border-line text-[12px] text-ink-muted"
               style={{ gridTemplateColumns: ROOM_TYPE_GRID }}
             >
               <span>Loại phòng</span>
@@ -161,13 +161,13 @@ export default function RoomTypeManagement() {
                 <button
                   onClick={() => setShowHidden((s) => !s)}
                   aria-expanded={showHidden}
-                  className={`w-full flex items-center justify-between px-4 py-2.5 bg-[#FAFBFB] border-t border-[#E4E6E9] text-[12px] text-[#98A1AC] hover:text-[#5C6672]
+                  className={`w-full flex items-center justify-between px-4 py-2.5 bg-[#FAFBFB] border-t border-line text-[12px] text-ink-muted hover:text-ink-secondary
                     ${showHidden ? "" : "rounded-b-[10px]"}`}
                 >
                   <span className="tabular-nums">
                     Đã ẩn {hidden.length} loại phòng
                   </span>
-                  <span className="flex items-center gap-1 text-[#5C6672]">
+                  <span className="flex items-center gap-1 text-ink-secondary">
                     {showHidden ? "Thu gọn" : "Hiện"}
                     <ChevronDown
                       size={13}
@@ -192,22 +192,22 @@ export default function RoomTypeManagement() {
 
         {/* ── Phân trang ──────────────────────────────── */}
         {totalPages > 1 && (
-          <div className="px-5 py-3 flex items-center justify-between border-t border-[#E4E6E9]">
-            <span className="text-[12px] text-[#98A1AC] tabular-nums">
+          <div className="px-5 py-3 flex items-center justify-between border-t border-line">
+            <span className="text-[12px] text-ink-muted tabular-nums">
               Trang {filters.page} trên {totalPages}, tổng {total} loại
             </span>
             <div className="flex gap-1.5">
               <button
                 disabled={filters.page <= 1}
                 onClick={() => setFilters({ page: filters.page - 1 })}
-                className="h-7 px-3 rounded-md border border-[#E4E6E9] text-[12px] text-[#14181D] hover:bg-[#F5F6F7] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-7 px-3 rounded-md border border-line text-[12px] text-ink hover:bg-row-hover disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Trước
               </button>
               <button
                 disabled={filters.page >= totalPages}
                 onClick={() => setFilters({ page: filters.page + 1 })}
-                className="h-7 px-3 rounded-md border border-[#E4E6E9] text-[12px] text-[#14181D] hover:bg-[#F5F6F7] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-7 px-3 rounded-md border border-line text-[12px] text-ink hover:bg-row-hover disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Sau
               </button>
@@ -232,7 +232,7 @@ function SkeletonRows() {
       {Array.from({ length: 4 }).map((_, i) => (
         <div
           key={i}
-          className="grid items-center gap-3.5 min-h-[68px] px-4 border-b border-[#F0F1F3] last:border-b-0"
+          className="grid items-center gap-3.5 min-h-[68px] px-4 border-b border-line-soft last:border-b-0"
           style={{ gridTemplateColumns: ROOM_TYPE_GRID }}
         >
           <div className="space-y-2">
@@ -268,14 +268,14 @@ function EmptyState({
 }) {
   return (
     <div className="py-16 text-center">
-      <p className="text-[13px] text-[#5C6672] mb-3">
+      <p className="text-[13px] text-ink-secondary mb-3">
         {searching
           ? "Không có loại phòng nào khớp từ khoá."
           : "Chưa có loại phòng nào. Tạo loại phòng trước khi thêm phòng."}
       </p>
       <button
         onClick={searching ? onClear : onCreate}
-        className="h-8 px-4 rounded-md border border-[#E4E6E9] text-[12px] text-[#14181D] hover:bg-[#F5F6F7]"
+        className="h-8 px-4 rounded-md border border-line text-[12px] text-ink hover:bg-row-hover"
       >
         {searching ? "Bỏ tìm kiếm" : "Thêm loại phòng"}
       </button>

@@ -57,17 +57,15 @@ export default function Dropdown({
         onClick={() => setOpen((o) => !o)}
         className={`h-7 w-full pl-2.5 pr-2 flex items-center gap-1.5 rounded-md border
           text-[12px] bg-white transition-colors
-          ${open ? "border-[#1B3A5C] ring-2 ring-[#1B3A5C]/10" : "border-[#E4E6E9] hover:border-[#CDD2D8]"}`}
+          ${open ? "border-navy-700 ring-2 ring-[#1B3A5C]/10" : "border-line hover:border-line-input"}`}
       >
-        <span
-          className={`truncate ${selected ? "text-[#14181D]" : "text-[#98A1AC]"}`}
-        >
+        <span className={`truncate ${selected ? "text-ink" : "text-ink-muted"}`}>
           {selected?.label ?? placeholder}
         </span>
         <ChevronDown
           size={13}
           strokeWidth={1.75}
-          className={`ml-auto shrink-0 text-[#98A1AC] transition-transform duration-150
+          className={`ml-auto shrink-0 text-ink-muted transition-transform duration-150
             ${open ? "rotate-180" : ""}`}
         />
       </button>
@@ -75,7 +73,7 @@ export default function Dropdown({
       {open && (
         <div
           className={`absolute top-[calc(100%+4px)] z-30 min-w-full w-max max-w-[260px]
-            bg-white border border-[#E4E6E9] rounded-lg overflow-hidden
+            bg-white border border-line rounded-lg overflow-hidden
             shadow-[0_4px_12px_rgba(20,24,29,.10)]
             ${align === "right" ? "right-0" : "left-0"}`}
         >
@@ -90,24 +88,24 @@ export default function Dropdown({
                   setOpen(false);
                 }}
                 className={`w-full px-2.5 py-2 flex items-center gap-2 text-left text-[12px]
-                  transition-colors ${isActive ? "bg-[#F5F6F7]" : "hover:bg-[#F5F6F7]"}`}
+                  transition-colors ${isActive ? "bg-table-head" : "hover:bg-row-hover"}`}
               >
                 <span className="w-3.5 shrink-0">
                   {isActive && (
                     <Check
                       size={13}
                       strokeWidth={2.25}
-                      className="text-[#1B3A5C]"
+                      className="text-navy-700"
                     />
                   )}
                 </span>
                 <span
-                  className={`truncate ${isActive ? "text-[#14181D] font-medium" : "text-[#14181D]"}`}
+                  className={`truncate ${isActive ? "text-ink font-medium" : "text-ink"}`}
                 >
                   {option.label}
                 </span>
                 {option.hint && (
-                  <span className="ml-auto pl-3 text-[11px] text-[#98A1AC] tabular-nums shrink-0">
+                  <span className="ml-auto pl-3 text-[11px] text-ink-muted tabular-nums shrink-0">
                     {option.hint}
                   </span>
                 )}

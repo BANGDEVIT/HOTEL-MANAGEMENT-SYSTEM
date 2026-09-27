@@ -111,7 +111,7 @@ export default function RoomRow({ room, onEdit, onManageImages }: Props) {
 
   return (
     <div
-      className="grid items-center h-[52px] border-b border-[#F0F1F3] pr-2 hover:bg-[#F5F6F7] transition-colors"
+      className="grid items-center h-[52px] border-b border-line-soft pr-2 hover:bg-row-hover transition-colors"
       style={{ gridTemplateColumns: GRID }}
     >
       {/* 1. Thanh trạng thái */}
@@ -125,7 +125,7 @@ export default function RoomRow({ room, onEdit, onManageImages }: Props) {
         <button
           onClick={() => onManageImages(room)}
           title={imageCount ? `${imageCount} ảnh` : "Chưa có ảnh"}
-          className="relative w-12 h-9 rounded-md overflow-hidden bg-[#F5F6F7] border border-[#E4E6E9] flex items-center justify-center hover:border-[#CDD2D8]"
+          className="relative w-12 h-9 rounded-md overflow-hidden bg-table-head border border-line flex items-center justify-center hover:border-line-input"
         >
           {cover ? (
             <img
@@ -150,27 +150,25 @@ export default function RoomRow({ room, onEdit, onManageImages }: Props) {
       </div>
 
       {/* 3. Số phòng */}
-      <div className="text-[15px] font-semibold text-[#14181D] tabular-nums">
+      <div className="text-[15px] font-semibold text-ink tabular-nums">
         {room.room_number}
       </div>
 
       {/* 4. Loại phòng */}
-      <div className="text-[13px] text-[#14181D] truncate">
-        {room.room_type.name}
-      </div>
+      <div className="text-[13px] text-ink truncate">{room.room_type.name}</div>
 
       {/* 5. Giường */}
-      <div className="text-[12px] text-[#5C6672] whitespace-nowrap">
+      <div className="text-[12px] text-ink-secondary whitespace-nowrap">
         {BED_TYPE_LABELS[room.room_type.bed_type]}
       </div>
 
       {/* 6. Sức chứa */}
-      <div className="text-[12px] text-[#98A1AC] tabular-nums whitespace-nowrap">
+      <div className="text-[12px] text-ink-muted tabular-nums whitespace-nowrap">
         {room.room_type.capacity} khách
       </div>
 
       {/* 7. Giá */}
-      <div className="text-[13px] text-[#14181D] text-right tabular-nums">
+      <div className="text-[13px] text-ink text-right tabular-nums">
         {room.room_type.base_price.toLocaleString("vi-VN")}
       </div>
 
@@ -187,7 +185,7 @@ export default function RoomRow({ room, onEdit, onManageImages }: Props) {
         <button
           ref={btnRef}
           onClick={() => setMenuOpen((o) => !o)}
-          className="w-7 h-7 flex items-center justify-center rounded text-[#98A1AC] hover:bg-[#E4E6E9] hover:text-[#14181D]"
+          className="w-7 h-7 flex items-center justify-center rounded text-ink-muted hover:bg-[#E4E6E9] hover:text-ink"
         >
           <MoreHorizontal
             size={15}
@@ -206,19 +204,19 @@ export default function RoomRow({ room, onEdit, onManageImages }: Props) {
                 width: MENU_WIDTH,
                 visibility: pos ? "visible" : "hidden",
               }}
-              className="bg-white border border-[#E4E6E9] rounded-lg shadow-[0_4px_12px_rgba(20,24,29,.10)] z-50 overflow-hidden"
+              className="bg-white border border-line rounded-lg shadow-[0_4px_12px_rgba(20,24,29,.10)] z-50 overflow-hidden"
             >
               <button
                 onClick={() => {
                   onEdit(room);
                   setMenuOpen(false);
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#14181D] hover:bg-[#F5F6F7]"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-ink hover:bg-row-hover"
               >
                 <Pencil
                   size={13}
                   strokeWidth={1.75}
-                  className="text-[#98A1AC]"
+                  className="text-ink-muted"
                 />
                 Sửa thông tin
               </button>
@@ -228,19 +226,19 @@ export default function RoomRow({ room, onEdit, onManageImages }: Props) {
                   onManageImages(room);
                   setMenuOpen(false);
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#14181D] hover:bg-[#F5F6F7]"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-ink hover:bg-row-hover"
               >
                 <ImageIcon
                   size={13}
                   strokeWidth={1.75}
-                  className="text-[#98A1AC]"
+                  className="text-ink-muted"
                 />
                 Quản lý ảnh
               </button>
 
               {nextStatuses.length > 0 && (
                 <>
-                  <div className="px-3 pt-2 pb-1 text-[11px] text-[#98A1AC] border-t border-[#F0F1F3]">
+                  <div className="px-3 pt-2 pb-1 text-[11px] text-ink-muted border-t border-line-soft">
                     Chuyển trạng thái
                   </div>
                   {nextStatuses.map((status) => (
@@ -248,7 +246,7 @@ export default function RoomRow({ room, onEdit, onManageImages }: Props) {
                       key={status}
                       disabled={busy}
                       onClick={() => changeStatus(status)}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-[#14181D] hover:bg-[#F5F6F7] disabled:opacity-50"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-ink hover:bg-row-hover disabled:opacity-50"
                     >
                       <span
                         className="w-[7px] h-[7px] rounded-full"
@@ -261,23 +259,23 @@ export default function RoomRow({ room, onEdit, onManageImages }: Props) {
               )}
 
               {canDelete && (
-                <div className="border-t border-[#F0F1F3]">
+                <div className="border-t border-line-soft">
                   {confirming ? (
                     <div className="p-2.5">
-                      <p className="text-[11px] text-[#5C6672] mb-2 leading-snug">
+                      <p className="text-[11px] text-ink-secondary mb-2 leading-snug">
                         Ẩn phòng {room.room_number} khỏi danh sách?
                       </p>
                       <div className="flex gap-1.5">
                         <button
                           disabled={busy}
                           onClick={handleDelete}
-                          className="flex-1 h-7 rounded-md bg-[#B4321F] text-white text-[11px] font-medium disabled:opacity-60"
+                          className="flex-1 h-7 rounded-md bg-destructive text-white text-[11px] font-medium disabled:opacity-60"
                         >
                           Ẩn phòng
                         </button>
                         <button
                           onClick={() => setConfirming(false)}
-                          className="flex-1 h-7 rounded-md border border-[#E4E6E9] text-[11px] text-[#5C6672]"
+                          className="flex-1 h-7 rounded-md border border-line text-[11px] text-ink-secondary"
                         >
                           Huỷ
                         </button>

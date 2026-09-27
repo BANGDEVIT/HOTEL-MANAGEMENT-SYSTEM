@@ -58,7 +58,7 @@ export default function IdentityCard({ profile }: { profile: Employee }) {
   const fullName = `${profile.last_name} ${profile.first_name}`;
 
   return (
-    <div className="bg-white border border-[#E4E6E9] rounded-[10px] px-5 py-6 text-center">
+    <div className="bg-white border border-line rounded-[10px] px-5 py-6 text-center">
       <div className="relative w-24 h-24 mx-auto">
         {avatarSrc ? (
           <img
@@ -67,7 +67,7 @@ export default function IdentityCard({ profile }: { profile: Employee }) {
             className={`w-24 h-24 rounded-full object-cover ${uploading ? "opacity-60" : ""}`}
           />
         ) : (
-          <div className="w-24 h-24 rounded-full bg-[#1B3A5C] text-white text-[32px] font-semibold flex items-center justify-center">
+          <div className="w-24 h-24 rounded-full bg-navy-700 text-white text-[32px] font-semibold flex items-center justify-center">
             {initials(profile)}
           </div>
         )}
@@ -84,7 +84,7 @@ export default function IdentityCard({ profile }: { profile: Employee }) {
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={uploading}
-          className="absolute -right-1 -bottom-1 h-7 px-2.5 rounded-full border border-[#E4E6E9] bg-white text-[11px] text-[#14181D] shadow-[0_1px_3px_rgba(20,24,29,.1)] flex items-center gap-1 hover:bg-[#F5F6F7] disabled:opacity-60"
+          className="absolute -right-1 -bottom-1 h-7 px-2.5 rounded-full border border-line bg-white text-[11px] text-ink shadow-[0_1px_3px_rgba(20,24,29,.1)] flex items-center gap-1 hover:bg-row-hover disabled:opacity-60"
         >
           <Camera
             size={12}
@@ -94,17 +94,17 @@ export default function IdentityCard({ profile }: { profile: Employee }) {
         </button>
       </div>
 
-      <div className="text-[17px] font-semibold text-[#14181D] mt-3.5">
-        {fullName}
+      <div className="text-[17px] font-semibold text-ink mt-3.5">{fullName}</div>
+      <div className="text-[12.5px] text-ink-secondary mt-0.5">
+        {profile.position}
       </div>
-      <div className="text-[12.5px] text-[#5C6672] mt-0.5">{profile.position}</div>
       {role && (
-        <span className="inline-block mt-2.5 text-[11.5px] text-[#1B3A5C] bg-[#EEF2F7] px-2 py-[3px] rounded">
+        <span className="inline-block mt-2.5 text-[11.5px] text-navy-700 bg-[#EEF2F7] px-2 py-[3px] rounded">
           {ROLE_LABELS[role]}
         </span>
       )}
 
-      <dl className="mt-5 border-t border-[#F0F1F3] text-left">
+      <dl className="mt-5 border-t border-line-soft text-left">
         <Fact
           label="Email"
           value={profile.email ?? profile.account.email}
@@ -117,14 +117,14 @@ export default function IdentityCard({ profile }: { profile: Employee }) {
           label="Thâm niên"
           value={tenure(profile.hired_date)}
         />
-        <div className="flex justify-between py-2.5 border-b border-[#F0F1F3] text-[12.5px]">
-          <dt className="text-[#98A1AC]">Lương</dt>
+        <div className="flex justify-between py-2.5 border-b border-line-soft text-[12.5px]">
+          <dt className="text-ink-muted">Lương</dt>
           <dd>
             <button
               type="button"
               onClick={() => setShowSalary((v) => !v)}
               aria-label={showSalary ? "Ẩn lương" : "Hiện lương"}
-              className="tabular-nums text-[#5C6672] hover:text-[#14181D]"
+              className="tabular-nums text-ink-secondary hover:text-ink"
             >
               {showSalary ? `${profile.salary.toLocaleString("vi-VN")} đ` : "••••••"}
             </button>
@@ -137,9 +137,9 @@ export default function IdentityCard({ profile }: { profile: Employee }) {
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-3 py-2.5 border-b border-[#F0F1F3] text-[12.5px]">
-      <dt className="text-[#98A1AC] shrink-0">{label}</dt>
-      <dd className="text-[#14181D] tabular-nums truncate">{value}</dd>
+    <div className="flex justify-between gap-3 py-2.5 border-b border-line-soft text-[12.5px]">
+      <dt className="text-ink-muted shrink-0">{label}</dt>
+      <dd className="text-ink tabular-nums truncate">{value}</dd>
     </div>
   );
 }

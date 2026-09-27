@@ -31,7 +31,7 @@ export default function LoginForm({ onSubmit, isLoading }: LoginFormProps) {
           placeholder="you@example.com"
           className={`w-full px-4 py-3 rounded-lg border text-[15px] outline-none
         focus:ring-2 focus:ring-[#1B3A5C]/10
-        ${errors.email ? "border-red-400" : "border-[#E2E2D8] focus:border-[#1B3A5C]"}`}
+        ${errors.email ? "border-red-400" : "border-[#E2E2D8] focus:border-navy-700"}`}
         />
         {errors.email && (
           <p className="text-red-600 text-[13px] mt-1.5">{errors.email.message}</p>
@@ -48,7 +48,7 @@ export default function LoginForm({ onSubmit, isLoading }: LoginFormProps) {
           placeholder="••••••••"
           className={`w-full px-4 py-3 rounded-lg border text-[15px] outline-none
         focus:ring-2 focus:ring-[#1B3A5C]/10
-        ${errors.password ? "border-red-400" : "border-[#E2E2D8] focus:border-[#1B3A5C]"}`}
+        ${errors.password ? "border-red-400" : "border-[#E2E2D8] focus:border-navy-700"}`}
         />
         {errors.password && (
           <p className="text-red-600 text-[13px] mt-1.5">
@@ -60,8 +60,8 @@ export default function LoginForm({ onSubmit, isLoading }: LoginFormProps) {
       <button
         type="submit"
         disabled={isLoading}
-        className="w-full bg-[#1B3A5C] text-white py-3 rounded-lg text-[15px]
-      font-medium hover:bg-[#0F2440] disabled:opacity-60 transition-colors"
+        className="w-full bg-navy-700 text-white py-3 rounded-lg text-[15px]
+      font-medium hover:bg-navy-hover disabled:opacity-60 transition-colors"
       >
         {isLoading ? "Đang đăng nhập..." : "Đăng nhập"}
       </button>

@@ -85,7 +85,7 @@ export default function HoverCard({
               width,
               visibility: pos ? "visible" : "hidden",
             }}
-            className="z-50 bg-white border border-[#E4E6E9] rounded-lg p-3 shadow-[0_4px_12px_rgba(20,24,29,.10)] pointer-events-none"
+            className="z-50 bg-white border border-line rounded-lg p-3 shadow-[0_4px_12px_rgba(20,24,29,.10)] pointer-events-none"
           >
             {content}
           </div>,

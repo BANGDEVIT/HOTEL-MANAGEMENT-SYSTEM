@@ -4,11 +4,11 @@ import { AMENITY_LABELS, sortAmenities } from "../../../types/roomType";
 
 const VISIBLE = 3;
 const CHIP =
-  "h-6 px-2 inline-flex items-center rounded-md border border-[#E4E6E9] text-[12px] whitespace-nowrap";
+  "h-6 px-2 inline-flex items-center rounded-md border border-line text-[12px] whitespace-nowrap";
 
 export default function AmenityChips({ amenities }: { amenities: Amenity[] }) {
   if (amenities.length === 0) {
-    return <span className="text-[12px] text-[#98A1AC]">Chưa chọn tiện nghi</span>;
+    return <span className="text-[12px] text-ink-muted">Chưa chọn tiện nghi</span>;
   }
 
   const sorted = sortAmenities(amenities);
@@ -20,7 +20,7 @@ export default function AmenityChips({ amenities }: { amenities: Amenity[] }) {
       {shown.map((a) => (
         <span
           key={a}
-          className={`${CHIP} text-[#5C6672]`}
+          className={`${CHIP} text-ink-secondary`}
         >
           {AMENITY_LABELS[a]}
         </span>
@@ -31,14 +31,14 @@ export default function AmenityChips({ amenities }: { amenities: Amenity[] }) {
           width={200}
           content={
             <div>
-              <p className="text-[12px] font-medium text-[#14181D] mb-1.5 tabular-nums">
+              <p className="text-[12px] font-medium text-ink mb-1.5 tabular-nums">
                 Thêm {rest.length} tiện nghi
               </p>
               <div className="flex flex-wrap gap-1">
                 {rest.map((a) => (
                   <span
                     key={a}
-                    className={`${CHIP} text-[#5C6672]`}
+                    className={`${CHIP} text-ink-secondary`}
                   >
                     {AMENITY_LABELS[a]}
                   </span>
@@ -48,7 +48,7 @@ export default function AmenityChips({ amenities }: { amenities: Amenity[] }) {
           }
         >
           <span
-            className={`${CHIP} text-[#14181D] tabular-nums hover:border-[#CDD2D8] cursor-default`}
+            className={`${CHIP} text-ink tabular-nums hover:border-line-input cursor-default`}
           >
             +{rest.length}
           </span>

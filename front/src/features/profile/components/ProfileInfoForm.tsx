@@ -24,7 +24,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export const INPUT =
-  "w-full h-9 px-3 rounded-md border text-[13px] text-[#14181D] outline-none focus:border-[#1B3A5C] focus:ring-2 focus:ring-[#C9A84C]/40";
+  "w-full h-9 px-3 rounded-md border text-[13px] text-ink outline-none focus:border-navy-700 focus:ring-2 focus:ring-[#C9A84C]/40";
 
 export default function ProfileInfoForm({ profile }: { profile: Employee }) {
   const updateProfile = useProfileStore((s) => s.updateProfile);
@@ -61,14 +61,12 @@ export default function ProfileInfoForm({ profile }: { profile: Employee }) {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="border-b border-[#E4E6E9]"
+      className="border-b border-line"
       noValidate
     >
       <div className="px-5 pt-4">
-        <h2 className="text-[14px] font-semibold text-[#14181D]">
-          Thông tin cá nhân
-        </h2>
-        <p className="text-[12px] text-[#98A1AC] mt-0.5">
+        <h2 className="text-[14px] font-semibold text-ink">Thông tin cá nhân</h2>
+        <p className="text-[12px] text-ink-muted mt-0.5">
           Email, vị trí và lương do quản lý cập nhật.
         </p>
       </div>
@@ -81,7 +79,7 @@ export default function ProfileInfoForm({ profile }: { profile: Employee }) {
           <input
             {...register("last_name")}
             autoComplete="family-name"
-            className={`${INPUT} ${errors.last_name ? "border-[#B4321F]" : "border-[#E4E6E9]"}`}
+            className={`${INPUT} ${errors.last_name ? "border-[#B4321F]" : "border-line"}`}
           />
         </Field>
 
@@ -92,7 +90,7 @@ export default function ProfileInfoForm({ profile }: { profile: Employee }) {
           <input
             {...register("first_name")}
             autoComplete="given-name"
-            className={`${INPUT} ${errors.first_name ? "border-[#B4321F]" : "border-[#E4E6E9]"}`}
+            className={`${INPUT} ${errors.first_name ? "border-[#B4321F]" : "border-line"}`}
           />
         </Field>
 
@@ -104,7 +102,7 @@ export default function ProfileInfoForm({ profile }: { profile: Employee }) {
             {...register("phone")}
             inputMode="numeric"
             autoComplete="tel"
-            className={`${INPUT} tabular-nums ${errors.phone ? "border-[#B4321F]" : "border-[#E4E6E9]"}`}
+            className={`${INPUT} tabular-nums ${errors.phone ? "border-[#B4321F]" : "border-line"}`}
           />
         </Field>
 
@@ -114,17 +112,17 @@ export default function ProfileInfoForm({ profile }: { profile: Employee }) {
             control={control}
             name="gender"
             render={({ field }) => (
-              <div className="flex h-9 border border-[#E4E6E9] rounded-md overflow-hidden">
+              <div className="flex h-9 border border-line rounded-md overflow-hidden">
                 {GENDERS.map((g, i) => (
                   <button
                     key={g}
                     type="button"
                     aria-pressed={field.value === g}
                     onClick={() => field.onChange(g)}
-                    className={`flex-1 text-[12.5px] ${i > 0 ? "border-l border-[#E4E6E9]" : ""} ${
+                    className={`flex-1 text-[12.5px] ${i > 0 ? "border-l border-line" : ""} ${
                       field.value === g
-                        ? "bg-[#1B3A5C] text-white font-medium"
-                        : "bg-white text-[#5C6672] hover:bg-[#F5F6F7]"
+                        ? "bg-navy-700 text-white font-medium"
+                        : "bg-white text-ink-secondary hover:bg-row-hover"
                     }`}
                   >
                     {GENDER_LABELS[g]}
@@ -141,14 +139,14 @@ export default function ProfileInfoForm({ profile }: { profile: Employee }) {
           type="button"
           onClick={() => reset()} // không truyền gì -> về lại defaultValues
           disabled={!isDirty || isSubmitting}
-          className="h-8 px-3.5 rounded-md border border-[#E4E6E9] bg-white text-[12.5px] text-[#14181D] hover:bg-[#F5F6F7] disabled:opacity-45 disabled:cursor-not-allowed"
+          className="h-8 px-3.5 rounded-md border border-line bg-white text-[12.5px] text-ink hover:bg-row-hover disabled:opacity-45 disabled:cursor-not-allowed"
         >
           Hoàn tác
         </button>
         <button
           type="submit"
           disabled={!isDirty || isSubmitting}
-          className="h-8 px-3.5 rounded-md bg-[#1B3A5C] text-white text-[12.5px] font-medium hover:bg-[#0F2440] disabled:opacity-45 disabled:cursor-not-allowed"
+          className="h-8 px-3.5 rounded-md bg-navy-700 text-white text-[12.5px] font-medium hover:bg-navy-hover disabled:opacity-45 disabled:cursor-not-allowed"
         >
           {isSubmitting ? "Đang lưu" : "Lưu thay đổi"}
         </button>
@@ -172,12 +170,12 @@ export function Field({
 }) {
   return (
     <label className={`block ${className}`}>
-      <span className="block text-[12px] text-[#5C6672] mb-1.5">{label}</span>
+      <span className="block text-[12px] text-ink-secondary mb-1.5">{label}</span>
       {children}
       {error ? (
         <span className="block text-[11px] text-[#B4321F] mt-1">{error}</span>
       ) : hint ? (
-        <span className="block text-[11px] text-[#98A1AC] mt-1">{hint}</span>
+        <span className="block text-[11px] text-ink-muted mt-1">{hint}</span>
       ) : null}
     </label>
   );

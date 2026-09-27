@@ -77,17 +77,17 @@ export default function Unauthorized() {
     : "?";
 
   return (
-    <main className="min-h-screen bg-[#F5F6F7] flex items-center justify-center px-4 py-10">
+    <main className="min-h-screen bg-table-head flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-[440px]">
-        <div className="bg-white border border-[#E4E6E9] rounded-[12px] overflow-hidden shadow-[0_1px_2px_rgba(20,24,29,.04)]">
+        <div className="bg-white border border-line rounded-[12px] overflow-hidden shadow-[0_1px_2px_rgba(20,24,29,.04)]">
           <div className="px-8 pt-9 pb-6 text-center">
             <DoorPlate />
 
-            <p className="text-[12px] text-[#98A1AC] mt-6 tabular-nums">Lỗi 403</p>
-            <h1 className="text-[20px] font-semibold text-[#14181D] tracking-[-0.01em] mt-1">
+            <p className="text-[12px] text-ink-muted mt-6 tabular-nums">Lỗi 403</p>
+            <h1 className="text-[20px] font-semibold text-ink tracking-[-0.01em] mt-1">
               Bạn không có quyền vào trang này
             </h1>
-            <p className="text-[13px] text-[#5C6672] leading-relaxed mt-2">
+            <p className="text-[13px] text-ink-secondary leading-relaxed mt-2">
               <Explanation
                 pageName={pageName}
                 allowed={allowed}
@@ -101,7 +101,7 @@ export default function Unauthorized() {
               type="button"
               // replace: không để trang lỗi nằm lại trong lịch sử trình duyệt
               onClick={() => navigate(homeFor(myRoles), { replace: true })}
-              className="h-[38px] rounded-[7px] bg-[#1B3A5C] text-white text-[13px] font-medium hover:bg-[#0F2440]"
+              className="h-[38px] rounded-[7px] bg-navy-700 text-white text-[13px] font-medium hover:bg-navy-hover"
             >
               Về trang của tôi
             </button>
@@ -110,7 +110,7 @@ export default function Unauthorized() {
               <button
                 type="button"
                 onClick={() => navigate(-1)}
-                className="h-[38px] rounded-[7px] border border-[#E4E6E9] bg-white text-[13px] text-[#14181D] hover:bg-[#F5F6F7] flex items-center justify-center gap-1.5"
+                className="h-[38px] rounded-[7px] border border-line bg-white text-[13px] text-ink hover:bg-row-hover flex items-center justify-center gap-1.5"
               >
                 <ArrowLeft
                   size={14}
@@ -123,22 +123,22 @@ export default function Unauthorized() {
 
           {/* Đang đăng nhập bằng tài khoản nào: hay gặp trang này khi đăng nhập nhầm */}
           {user && (
-            <div className="border-t border-[#E4E6E9] bg-[#F5F6F7] px-8 py-3.5 flex items-center gap-3">
-              <span className="w-8 h-8 shrink-0 rounded-full bg-[#1B3A5C] text-white text-[12px] font-semibold flex items-center justify-center">
+            <div className="border-t border-line bg-table-head px-8 py-3.5 flex items-center gap-3">
+              <span className="w-8 h-8 shrink-0 rounded-full bg-navy-700 text-white text-[12px] font-semibold flex items-center justify-center">
                 {initials}
               </span>
               <div className="min-w-0">
-                <div className="text-[13px] font-medium text-[#14181D] truncate">
+                <div className="text-[13px] font-medium text-ink truncate">
                   {user.fullname ?? user.email}
                 </div>
-                <div className="text-[11.5px] text-[#98A1AC]">
+                <div className="text-[11.5px] text-ink-muted">
                   {myTopRole ? ALL_ROLE_LABELS[myTopRole] : ""}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={handleSwitchAccount}
-                className="ml-auto shrink-0 h-8 px-2 rounded-md text-[12px] text-[#5C6672] flex items-center gap-1.5 hover:bg-white hover:text-[#B4321F]"
+                className="ml-auto shrink-0 h-8 px-2 rounded-md text-[12px] text-ink-secondary flex items-center gap-1.5 hover:bg-white hover:text-[#B4321F]"
               >
                 <LogOut
                   size={13}
@@ -150,7 +150,7 @@ export default function Unauthorized() {
           )}
         </div>
 
-        <p className="text-center text-[12px] text-[#98A1AC] mt-4">
+        <p className="text-center text-[12px] text-ink-muted mt-4">
           Cần thêm quyền? Liên hệ quản lý khách sạn.
         </p>
       </div>
@@ -160,7 +160,7 @@ export default function Unauthorized() {
 
 /** Chữ in đậm trong câu giải thích. Khai báo 1 lần ở ngoài -> React luôn thấy CÙNG 1 component */
 function B({ children }: { children: React.ReactNode }) {
-  return <b className="font-medium text-[#14181D]">{children}</b>;
+  return <b className="font-medium text-ink">{children}</b>;
 }
 
 /** Câu giải thích: nói được càng cụ thể càng tốt, tuỳ theo có bao nhiêu thông tin */
@@ -200,7 +200,7 @@ function DoorPlate() {
   return (
     <div
       aria-hidden="true" // chỉ để trang trí -> trình đọc màn hình bỏ qua
-      className="mx-auto w-[176px] h-24 rounded-[10px] bg-[#1B3A5C] p-[5px] shadow-[0_8px_20px_rgba(15,36,64,.18)]"
+      className="mx-auto w-[176px] h-24 rounded-[10px] bg-navy-700 p-[5px] shadow-[0_8px_20px_rgba(15,36,64,.18)]"
     >
       <div className="relative h-full rounded-[7px] border border-[#9DB4D1]/45 flex flex-col items-center justify-center">
         <span className={`${screw} top-1.5 left-1.5`} />
