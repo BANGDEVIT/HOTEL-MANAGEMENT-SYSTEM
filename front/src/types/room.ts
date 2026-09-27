@@ -77,6 +77,20 @@ export interface UpdateRoomStatusPayload {
   status: RoomStatus;
 }
 
+export interface FloorStats {
+  floor: number;
+  total: number;
+  available: number;
+  occupied: number;
+  cleaning: number;
+  maintenance: number;
+}
+
+export type RoomStats = Record<RoomStatus, number> & {
+  total: number;
+  floors: FloorStats[];
+};
+
 // {
 //   available: number;
 //   occupied: number;
@@ -84,7 +98,7 @@ export interface UpdateRoomStatusPayload {
 //   total: number;
 // }
 // & intersection type (kiểu giao)
-export type RoomStats = Record<RoomStatus, number> & { total: number };
+// export type RoomStats = Record<RoomStatus, number> & { total: number };
 
 /** Sao chép luật chuyển trạng thái từ RoomService ở BE.
  *  Dùng để chỉ hiện lựa chọn hợp lệ — BE vẫn tự kiểm tra lại. */
