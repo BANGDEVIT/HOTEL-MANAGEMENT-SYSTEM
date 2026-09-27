@@ -1,47 +1,21 @@
-// dto/update-customer-profile.dto.ts
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsInt, IsOptional, IsString } from 'class-validator';
+import { PartialType, PickType } from '@nestjs/swagger';
+import { CreateGuestDto } from './create-guest.dto';
 
-// Customer tự cập nhật — ít field hơn, không có reward_points và is_active
-export class UpdateCustomerProfileDto {
-  @ApiPropertyOptional({ example: 'Bang' })
-  @IsOptional()
-  @IsString()
-  first_name?: string;
+/**
+ * Khách tự sửa hồ sơ của mình.
+ * PickType: chỉ lấy đúng các field được phép -> KHÔNG có reward_points, is_active.
+ * (Bản cũ có reward_points -> khách tự cộng điểm cho mình được.)
+ */
+export class UpdateCustomerProfileDto extends PartialType(
+  PickType(CreateGuestDto, [
+    'first_name',
+    'last_name',
+    'phone',
+    'email',
+    'id_type',
+    'id_card',
+    'nationality',
+  ] as const),
+) {}
 
-  @ApiPropertyOptional({ example: 'Nguyen' })
-  @IsOptional()
-  @IsString()
-  last_name?: string;
-
-  @ApiPropertyOptional({ example: '0909123456' })
-  @IsOptional()
-  @IsString()
-  phone?: string;
-
-  @ApiPropertyOptional({ example: 'bang@gmail.com' })
-  @IsOptional()
-  @IsEmail({}, { message: 'Email không hợp lệ' })
-  email?: string;
-
-  @ApiPropertyOptional({ example: 'CC001234' })
-  @IsOptional()
-  @IsString()
-  id_card?: string;
-
-  @ApiPropertyOptional({ example: 'Vietnamese' })
-  @IsOptional()
-  @IsString()
-  nationality?: string;
-
-  @ApiPropertyOptional({ example: '100' })
-  @IsOptional()
-  @IsInt()
-  reward_points?: number;
-
-  @ApiPropertyOptional()
-  id_card_img_url?: string;
-
-  @ApiPropertyOptional()
-  id_card_img_back_url?: string;
-}
+// as const giữ các tên field ở dạng literal type ('first_name' | 'last_name' | ...) thay vì string[]

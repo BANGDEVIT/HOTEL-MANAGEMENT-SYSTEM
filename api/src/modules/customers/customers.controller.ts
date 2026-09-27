@@ -1,25 +1,20 @@
-// customer.controller.ts
 import {
-  Controller,
-  Get,
-  Patch,
-  Param,
-  Delete,
-  Query,
+  BadRequestException,
   Body,
+  Controller,
+  Delete,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
   Post,
-  UseInterceptors,
+  Query,
   UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
-
-import {
-  PaginatedCustomerResponseDto,
-  CustomerResponseDto,
-} from './dto/customer-response.dto';
-import { Roles } from '../../common/decorators/role-decorator';
-import { GetAccount } from '../../common/decorators/get-account.decorator';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -29,438 +24,318 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { CustomersService } from './customers.service';
-import { QueryCustomerDto } from './dto/query-customers.dto';
+import { Roles } from '../../common/decorators/role-decorator';
+import { GetAccount } from '../../common/decorators/get-account.decorator';
+import { CustomersService, type IdImageFiles } from './customers.service';
+import { CreateGuestDto } from './dto/create-guest.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { UpdateCustomerProfileDto } from './dto/update-customer-profile.dto';
 import { ChangePasswordDto } from './dto/chang-password-customer.dto';
-import { CreateGuestDto } from './dto/create-guest.dto';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { LinkAccountDto } from './dto/link-account.dto';
+import { LookupCustomerDto } from './dto/lookup-customer.dto';
+import { QueryCustomerDto } from './dto/query-customers.dto';
+import {
+  CreateCustomerNoteDto,
+  CustomerNoteDto,
+} from './dto/customer-note.dto';
+import {
+  CustomerBookingDto,
+  CustomerDetailDto,
+  CustomerLookupDto,
+  CustomerStatsDto,
+  PaginatedCustomerResponseDto,
+} from './dto/customer-response.dto';
 
+/* ============================================================
+ * Upload ảnh giấy tờ: trước đây cấu hình này bị chép 3 lần.
+ * Gom thành 1 hàm -> sửa giới hạn dung lượng / định dạng chỉ 1 chỗ.
+ * ============================================================ */
+const IMAGE_MIME = /\/(jpeg|png|webp)$/;
+
+function IdCardImages() {
+  return UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'front_image', maxCount: 1 },
+        { name: 'back_image', maxCount: 1 },
+      ],
+      {
+        limits: { fileSize: 5 * 1024 * 1024 },
+        fileFilter: (_req, file, cb) =>
+          IMAGE_MIME.test(file.mimetype)
+            ? cb(null, true)
+            : // BadRequestException -> 400. new Error(...) thì Nest trả 500.
+              cb(
+                new BadRequestException('Chỉ nhận ảnh JPEG, PNG hoặc WEBP'),
+                false,
+              ),
+      },
+    ),
+  );
+}
+
+/** Schema multipart cho Swagger, dùng chung cho tạo và sửa */
+const IDENTITY_FORM = {
+  first_name: { type: 'string', example: 'Khoa' },
+  last_name: { type: 'string', example: 'Trần Minh' },
+  phone: { type: 'string', example: '0909123456' },
+  email: { type: 'string' },
+  id_type: { type: 'string', enum: ['cccd', 'passport'] },
+  id_card: { type: 'string', example: '079203001234' },
+  nationality: { type: 'string', example: 'Việt Nam' },
+  allow_duplicate_phone: { type: 'boolean' },
+  front_image: { type: 'string', format: 'binary' },
+  back_image: { type: 'string', format: 'binary' },
+};
+
+/**
+ * THỨ TỰ ROUTE QUAN TRỌNG: các route tĩnh (profile, stats, lookup, guest)
+ * phải khai báo TRƯỚC ':id', nếu không "stats" sẽ bị hiểu là một id.
+ */
 @Controller('customers')
 @ApiTags('customers')
 @ApiBearerAuth('JWT-auth')
 export class CustomersController {
   constructor(private readonly customerService: CustomersService) {}
 
-  // ==================== GET PROFILE ====================
+  /* ==================== KHÁCH TỰ QUẢN LÝ HỒ SƠ ==================== */
+
   @Get('profile')
-  @HttpCode(HttpStatus.OK)
   @Roles('customer')
-  @ApiOperation({
-    summary: 'Xem thông tin cá nhân',
-    description: 'Khách hàng xem thông tin cá nhân của mình',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Trả về thông tin cá nhân',
-    type: CustomerResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.UNAUTHORIZED,
-    description: 'Chưa đăng nhập',
-  })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Không có quyền truy cập',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Không tìm thấy khách hàng',
-  })
-  async getProfile(@GetAccount('sub') accountId: string) {
+  @ApiOperation({ summary: 'Khách xem hồ sơ của mình' })
+  @ApiResponse({ status: 200, type: CustomerDetailDto })
+  getProfile(@GetAccount('sub') accountId: string): Promise<CustomerDetailDto> {
     return this.customerService.getProfile(accountId);
   }
 
-  // ==================== UPDATE PROFILE ====================
   @Patch('profile')
-  @HttpCode(HttpStatus.OK)
   @Roles('customer')
-  @UseInterceptors(
-    FileFieldsInterceptor(
-      [
-        { name: 'id_card_img_url', maxCount: 1 },
-        { name: 'id_card_img_back_url', maxCount: 1 },
-      ],
-      {
-        limits: { fileSize: 5 * 1024 * 1024 },
-        fileFilter: (req, file, cb) => {
-          if (file.mimetype.match(/\/(jpeg|png|webp)$/)) {
-            cb(null, true);
-          } else {
-            cb(
-              new Error('Only image files (jpeg, png, webp) are allowed'),
-              false,
-            );
-          }
-        },
-      },
-    ),
-  )
+  @IdCardImages()
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
-      properties: {
-        first_name: { type: 'string' },
-        last_name: { type: 'string' },
-        phone: { type: 'string' },
-        nationality: { type: 'string' },
-        id_card_img_url: { type: 'string', format: 'binary' },
-        id_card_img_back_url: { type: 'string', format: 'binary' },
-      },
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      properties: (({ allow_duplicate_phone: _omit, ...rest }) => rest)(
+        IDENTITY_FORM,
+      ),
     },
   })
   @ApiOperation({
-    summary: 'Cập nhật thông tin cá nhân',
+    summary: 'Khách tự sửa hồ sơ',
     description:
-      'Khách hàng tự cập nhật thông tin cá nhân (không bao gồm reward_points và is_active)',
+      'Không sửa được điểm thưởng. Ảnh gửi qua field front_image / back_image',
   })
+  @ApiResponse({ status: 200, type: CustomerDetailDto })
   @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Cập nhật thông tin thành công',
-    type: CustomerResponseDto,
+    status: 409,
+    description: 'Email hoặc số giấy tờ đã được dùng',
   })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: 'Email đã tồn tại hoặc dữ liệu không hợp lệ',
-  })
-  @ApiResponse({
-    status: HttpStatus.UNAUTHORIZED,
-    description: 'Chưa đăng nhập',
-  })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Không có quyền truy cập',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Không tìm thấy khách hàng',
-  })
-  async updateProfile(
+  updateProfile(
     @GetAccount('sub') accountId: string,
-    @Body() updateCustomerProfileDto: UpdateCustomerProfileDto,
-    @UploadedFiles()
-    files: {
-      id_card_img_url?: Express.Multer.File[];
-      id_card_img_back_url?: Express.Multer.File[];
-    },
-  ): Promise<CustomerResponseDto> {
-    return this.customerService.updateProfile(
-      accountId,
-      updateCustomerProfileDto,
-      files,
-    );
+    @Body() dto: UpdateCustomerProfileDto,
+    @UploadedFiles() files: IdImageFiles,
+  ): Promise<CustomerDetailDto> {
+    return this.customerService.updateProfile(accountId, dto, files);
   }
 
-  // ==================== CHANGE PASSWORD ====================
   @Patch('profile/password')
-  @HttpCode(HttpStatus.OK)
   @Roles('customer')
-  @ApiOperation({
-    summary: 'Đổi mật khẩu',
-    description: 'Khách hàng đổi mật khẩu (yêu cầu mật khẩu hiện tại)',
-  })
+  @ApiOperation({ summary: 'Khách đổi mật khẩu' })
+  @ApiResponse({ status: 200, description: 'Đổi mật khẩu thành công' })
   @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Đổi mật khẩu thành công',
-    schema: {
-      example: {
-        message: 'Password changed successfully',
-      },
-    },
-  })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description:
-      'Mật khẩu hiện tại không đúng hoặc mật khẩu mới trùng mật khẩu cũ',
-  })
-  @ApiResponse({
-    status: HttpStatus.UNAUTHORIZED,
-    description: 'Chưa đăng nhập',
-  })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Không có quyền truy cập',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Không tìm thấy tài khoản',
+    status: 400,
+    description: 'Sai mật khẩu hiện tại hoặc trùng mật khẩu cũ',
   })
   async changePassword(
     @GetAccount('sub') accountId: string,
-    @Body() changePasswordDto: ChangePasswordDto,
-  ) {
-    await this.customerService.changePassword(accountId, changePasswordDto);
-
-    return {
-      message: 'Password changed successfully',
-    };
+    @Body() dto: ChangePasswordDto,
+  ): Promise<{ message: string }> {
+    await this.customerService.changePassword(accountId, dto);
+    return { message: 'Đổi mật khẩu thành công' };
   }
 
-  // Staff tạo khách vãng lai
-  // ==================== CREATE GUEST ====================
-  @Post('guest')
+  /* ==================== NHÂN VIÊN: ROUTE TĨNH ==================== */
+
+  @Get('stats')
   @Roles('staff', 'manager', 'admin')
-  @UseInterceptors(
-    FileFieldsInterceptor(
-      [
-        { name: 'front_image', maxCount: 1 },
-        { name: 'back_image', maxCount: 1 },
-      ],
-      {
-        limits: { fileSize: 5 * 1024 * 1024 },
-        fileFilter: (req, file, cb) => {
-          if (file.mimetype.match(/\/(jpeg|png|webp)$/)) {
-            cb(null, true);
-          } else {
-            cb(new Error('Chỉ chấp nhận file JPEG, PNG, WEBP'), false);
-          }
-        },
-      },
-    ),
-  )
+  @ApiOperation({
+    summary: 'Thống kê khách cho 4 ô số liệu và số trên tab lọc',
+  })
+  @ApiResponse({ status: 200, type: CustomerStatsDto })
+  getStats(): Promise<CustomerStatsDto> {
+    return this.customerService.getStats();
+  }
+
+  @Get('lookup')
+  @Roles('staff', 'manager', 'admin')
+  @ApiOperation({
+    summary: 'Kiểm tra trùng theo SĐT hoặc số giấy tờ',
+    description:
+      'Dùng khi đang nhập form thêm/sửa khách. Trả tối đa 5 hồ sơ khớp',
+  })
+  @ApiResponse({ status: 200, type: [CustomerLookupDto] })
+  lookup(@Query() query: LookupCustomerDto): Promise<CustomerLookupDto[]> {
+    return this.customerService.lookup(query);
+  }
+
+  @Post('guest')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles('staff', 'manager', 'admin')
+  @IdCardImages()
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
-      properties: {
-        first_name: { type: 'string' },
-        last_name: { type: 'string' },
-        phone: { type: 'string' },
-        email: { type: 'string' },
-        id_card: { type: 'string' },
-        nationality: { type: 'string' },
-        front_image: { type: 'string', format: 'binary' },
-        back_image: { type: 'string', format: 'binary' },
-      },
+      required: ['first_name', 'last_name', 'phone'],
+      properties: IDENTITY_FORM,
     },
   })
-  async createGuest(
-    @Body() createGuestDto: CreateGuestDto,
-    @UploadedFiles()
-    files: {
-      front_image?: Express.Multer.File[];
-      back_image?: Express.Multer.File[];
-    },
-  ): Promise<CustomerResponseDto> {
-    return this.customerService.createGuest(createGuestDto, files);
+  @ApiOperation({ summary: 'Tạo khách vãng lai tại quầy' })
+  @ApiResponse({ status: 201, type: CustomerDetailDto })
+  @ApiResponse({
+    status: 409,
+    description: 'Trùng số giấy tờ, hoặc trùng SĐT mà chưa xác nhận',
+  })
+  createGuest(
+    @Body() dto: CreateGuestDto,
+    @UploadedFiles() files: IdImageFiles,
+  ): Promise<CustomerDetailDto> {
+    return this.customerService.createGuest(dto, files);
   }
 
-  // ==================== GET ALL CUSTOMERS ====================
   @Get()
-  @HttpCode(HttpStatus.OK)
   @Roles('staff', 'manager', 'admin')
   @ApiOperation({
-    summary: 'Lấy danh sách khách hàng',
+    summary: 'Danh sách khách',
     description:
-      'Hỗ trợ filter theo quốc tịch và tìm kiếm theo tên, email, số điện thoại',
+      'Tìm theo tên/SĐT/email/số giấy tờ, lọc thành viên, quốc tịch, tình trạng lưu trú',
   })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Trả về danh sách khách hàng',
-    type: PaginatedCustomerResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.UNAUTHORIZED,
-    description: 'Chưa đăng nhập',
-  })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Không có quyền truy cập',
-  })
-  async findAll(
+  @ApiResponse({ status: 200, type: PaginatedCustomerResponseDto })
+  findAll(
     @Query() query: QueryCustomerDto,
   ): Promise<PaginatedCustomerResponseDto> {
     return this.customerService.findAll(query);
   }
 
-  // ==================== GET CUSTOMER BY ID ====================
+  /* ==================== NHÂN VIÊN: THEO :id ==================== */
+
   @Get(':id')
-  @HttpCode(HttpStatus.OK)
-  @Roles('manager', 'admin', 'staff')
-  @ApiOperation({
-    summary: 'Xem chi tiết khách hàng',
-    description: 'Xem thông tin chi tiết của 1 khách hàng',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của khách hàng',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Trả về chi tiết khách hàng',
-    type: CustomerResponseDto,
-  })
-  @ApiResponse({
-    status: HttpStatus.UNAUTHORIZED,
-    description: 'Chưa đăng nhập',
-  })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Không có quyền truy cập',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Không tìm thấy khách hàng',
-  })
-  async findById(@Param('id') id: string): Promise<CustomerResponseDto> {
+  @Roles('staff', 'manager', 'admin')
+  @ApiOperation({ summary: 'Chi tiết khách (có số giấy tờ đầy đủ)' })
+  @ApiParam({ name: 'id', description: 'UUID khách hàng' })
+  @ApiResponse({ status: 200, type: CustomerDetailDto })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy khách hàng' })
+  findById(@Param('id', ParseUUIDPipe) id: string): Promise<CustomerDetailDto> {
     return this.customerService.findById(id);
   }
 
-  // Staff liên kết tài khoản cho guest
-  // ====================LINK ACCOUNT====================
-  @Post(':id/link-account')
-  @HttpCode(200)
+  @Get(':id/bookings')
   @Roles('staff', 'manager', 'admin')
-  @ApiOperation({
-    summary: 'Liên kết tài khoản cho khách vãng lai',
-    description:
-      'Khi khách walk-in muốn đăng ký tài khoản — liên kết với hồ sơ cũ',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của customer (walk-in)',
-    example: 'uuid-123',
-  })
-  @ApiResponse({ status: 200, description: 'Liên kết thành công' })
-  @ApiResponse({ status: 400, description: 'Khách hàng đã có tài khoản rồi' })
-  @ApiResponse({ status: 404, description: 'Không tìm thấy khách hàng' })
-  @ApiResponse({ status: 409, description: 'Email đã được sử dụng' })
-  async linkAccount(
-    @Param('id') customerId: string,
-    @Body() linkAccountDto: LinkAccountDto,
-  ): Promise<{ message: string }> {
-    return this.customerService.linkAccount(customerId, linkAccountDto);
+  @ApiOperation({ summary: 'Lịch sử đặt phòng của khách (50 lần gần nhất)' })
+  @ApiResponse({ status: 200, type: [CustomerBookingDto] })
+  getBookings(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<CustomerBookingDto[]> {
+    return this.customerService.getBookings(id);
   }
 
-  // ==================== UPDATE CUSTOMER ====================
-  @Patch(':id')
+  @Get(':id/notes')
+  @Roles('staff', 'manager', 'admin')
+  @ApiOperation({ summary: 'Ghi chú nội bộ về khách, mới nhất trước' })
+  @ApiResponse({ status: 200, type: [CustomerNoteDto] })
+  listNotes(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<CustomerNoteDto[]> {
+    return this.customerService.listNotes(id);
+  }
+
+  @Post(':id/notes')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles('staff', 'manager', 'admin')
+  @ApiOperation({ summary: 'Thêm ghi chú nội bộ' })
+  @ApiResponse({ status: 201, type: CustomerNoteDto })
+  addNote(
+    @Param('id', ParseUUIDPipe) id: string,
+    @GetAccount('sub') accountId: string,
+    @Body() dto: CreateCustomerNoteDto,
+  ): Promise<CustomerNoteDto> {
+    return this.customerService.addNote(id, accountId, dto);
+  }
+
+  @Delete(':id/notes/:noteId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Roles('staff', 'manager', 'admin')
+  @ApiOperation({ summary: 'Xoá ghi chú (người viết hoặc quản lý)' })
+  @ApiResponse({ status: 204, description: 'Đã xoá' })
+  @ApiResponse({
+    status: 403,
+    description: 'Không phải người viết, cũng không phải quản lý',
+  })
+  async deleteNote(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('noteId', ParseUUIDPipe) noteId: string,
+    @GetAccount('sub') accountId: string,
+    @GetAccount('roles') roles: string[],
+  ): Promise<void> {
+    await this.customerService.deleteNote(id, noteId, accountId, roles);
+  }
+
+  @Post(':id/link-account')
   @HttpCode(HttpStatus.OK)
   @Roles('staff', 'manager', 'admin')
-  @UseInterceptors(
-    FileFieldsInterceptor(
-      [
-        { name: 'front_image', maxCount: 1 },
-        { name: 'back_image', maxCount: 1 },
-      ],
-      {
-        limits: { fileSize: 5 * 1024 * 1024 },
-        fileFilter: (req, file, cb) => {
-          if (file.mimetype.match(/\/(jpeg|png|webp)$/)) {
-            cb(null, true);
-          } else {
-            cb(new Error('Chỉ chấp nhận file JPEG, PNG, WEBP'), false);
-          }
-        },
-      },
-    ),
-  )
+  @ApiOperation({
+    summary: 'Tạo tài khoản cho khách vãng lai',
+    description:
+      'Khách đã ở tại quầy muốn đăng ký thành viên, giữ nguyên lịch sử cũ',
+  })
+  @ApiResponse({ status: 200, description: 'Liên kết thành công' })
+  @ApiResponse({ status: 400, description: 'Khách đã có tài khoản' })
+  @ApiResponse({ status: 409, description: 'Email đã được dùng' })
+  linkAccount(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: LinkAccountDto,
+  ): Promise<{ message: string }> {
+    return this.customerService.linkAccount(id, dto);
+  }
+
+  @Patch(':id')
+  @Roles('staff', 'manager', 'admin')
+  @IdCardImages()
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
-        first_name: { type: 'string' },
-        last_name: { type: 'string' },
-        phone: { type: 'string' },
-        id_card: { type: 'string' },
-        nationality: { type: 'string' },
-        reward_points: { type: 'number' },
-        is_active: { type: 'boolean' },
-        front_image: { type: 'string', format: 'binary' },
-        back_image: { type: 'string', format: 'binary' },
+        ...IDENTITY_FORM,
+        reward_points: { type: 'integer', description: 'Chỉ quản lý' },
+        is_active: {
+          type: 'boolean',
+          description: 'Chỉ quản lý, chỉ khách có tài khoản',
+        },
       },
     },
   })
   @ApiOperation({
-    summary: 'Cập nhật thông tin khách hàng',
+    summary: 'Nhân viên sửa hồ sơ khách',
     description:
-      'Cho phép manager/admin cập nhật thông tin và trạng thái khách hàng',
+      'Staff sửa thông tin và ảnh giấy tờ. Điểm thưởng và khoá tài khoản chỉ quản lý làm được',
   })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của khách hàng',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
+  @ApiResponse({ status: 200, type: CustomerDetailDto })
   @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Cập nhật khách hàng thành công',
-    type: CustomerResponseDto,
+    status: 403,
+    description: 'Staff sửa điểm thưởng hoặc khoá tài khoản',
   })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: 'Dữ liệu không hợp lệ',
-  })
-  @ApiResponse({
-    status: HttpStatus.UNAUTHORIZED,
-    description: 'Chưa đăng nhập',
-  })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Không có quyền truy cập',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Không tìm thấy khách hàng',
-  })
-  async update(
-    @Param('id') id: string,
-    @Body() updateCustomerDto: UpdateCustomerDto,
-    @UploadedFiles()
-    files: {
-      front_image?: Express.Multer.File[];
-      back_image?: Express.Multer.File[];
-    },
-  ): Promise<CustomerResponseDto> {
-    return this.customerService.update(id, updateCustomerDto, files);
+  @ApiResponse({ status: 409, description: 'Trùng số giấy tờ hoặc SĐT' })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCustomerDto,
+    @UploadedFiles() files: IdImageFiles,
+    @GetAccount('roles') roles: string[],
+  ): Promise<CustomerDetailDto> {
+    return this.customerService.update(id, dto, files, roles);
   }
 
-  // ==================== DELETE CUSTOMER ====================
-  @Delete(':id')
-  @HttpCode(HttpStatus.OK)
-  @Roles('manager', 'admin')
-  @ApiOperation({
-    summary: 'Vô hiệu hóa khách hàng',
-    description: 'Soft delete - chỉ vô hiệu hóa tài khoản, không xóa dữ liệu',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của khách hàng',
-    example: '550e8400-e29b-41d4-a716-446655440000',
-  })
-  @ApiResponse({
-    status: HttpStatus.OK,
-    description: 'Vô hiệu hóa khách hàng thành công',
-    schema: {
-      example: {
-        message: 'Customer deactivated successfully',
-      },
-    },
-  })
-  @ApiResponse({
-    status: HttpStatus.BAD_REQUEST,
-    description: 'Khách hàng đã bị vô hiệu hóa trước đó',
-  })
-  @ApiResponse({
-    status: HttpStatus.UNAUTHORIZED,
-    description: 'Chưa đăng nhập',
-  })
-  @ApiResponse({
-    status: HttpStatus.FORBIDDEN,
-    description: 'Không có quyền truy cập',
-  })
-  @ApiResponse({
-    status: HttpStatus.NOT_FOUND,
-    description: 'Không tìm thấy khách hàng',
-  })
-  async remove(@Param('id') id: string) {
-    await this.customerService.remove(id);
-
-    return {
-      message: 'Customer deactivated successfully',
-    };
-  }
+  // KHÔNG còn DELETE /customers/:id:
+  // khách có lịch sử đặt phòng và hoá đơn nên không xoá. Khoá tài khoản dùng PATCH :id { is_active: false }.
 }

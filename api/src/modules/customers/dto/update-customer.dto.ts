@@ -1,54 +1,28 @@
-// dto/update-customer.dto.ts
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsInt, IsOptional, Min } from 'class-validator';
+import { CreateGuestDto, toBoolean } from './create-guest.dto';
 
-// Manager cập nhật thông tin khách
-export class UpdateCustomerDto {
-  @ApiPropertyOptional({ example: 'Bang' })
+/**
+ * Nhân viên sửa hồ sơ khách.
+ * PartialType (của @nestjs/swagger) chép lại toàn bộ validator + @Transform
+ * của CreateGuestDto và biến mọi field thành tuỳ chọn -> không phải viết lại.
+ */
+export class UpdateCustomerDto extends PartialType(CreateGuestDto) {
+  @ApiPropertyOptional({ example: 1200, description: 'CHỈ quản lý / admin' })
   @IsOptional()
-  @IsString()
-  first_name?: string;
-
-  @ApiPropertyOptional({ example: 'Nguyen' })
-  @IsOptional()
-  @IsString()
-  last_name?: string;
-
-  @ApiPropertyOptional({ example: '0909123456' })
-  @IsOptional()
-  @IsString()
-  phone?: string;
-
-  @ApiPropertyOptional({ example: 'CC001234' })
-  @IsOptional()
-  @IsString()
-  id_card?: string;
-
-  @ApiPropertyOptional({ example: 'Vietnamese' })
-  @IsOptional()
-  @IsString()
-  nationality?: string;
-
-  @ApiPropertyOptional({
-    example: 100,
-    description: 'Điều chỉnh reward points',
-  })
-  @IsOptional()
-  @IsInt()
+  @Type(() => Number) // multipart gửi "1200" -> 1200
+  @IsInt({ message: 'Điểm thưởng phải là số nguyên' })
   @Min(0)
   reward_points?: number;
 
   @ApiPropertyOptional({
-    example: true,
-    description: 'Kích hoạt/khóa tài khoản',
+    example: false,
+    description:
+      'Khoá / mở khoá tài khoản. CHỈ quản lý / admin, CHỈ khách có tài khoản',
   })
   @IsOptional()
+  @Transform(({ value }) => toBoolean(value))
   @IsBoolean()
   is_active?: boolean;
-
-  @ApiPropertyOptional()
-  id_card_img_url?: string;
-
-  @ApiPropertyOptional()
-  id_card_img_back_url?: string;
 }
