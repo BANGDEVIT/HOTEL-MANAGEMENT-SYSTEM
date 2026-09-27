@@ -89,7 +89,7 @@ export default function EmployeeRow({
 
   return (
     <div
-      className={`grid items-center gap-3 min-h-[56px] px-4 border-b border-[#F0F1F3] hover:bg-[#F5F6F7] transition-colors
+      className={`grid items-center gap-3 min-h-[56px] px-4 border-b border-line-soft hover:bg-row-hover transition-colors
         ${active ? "" : "opacity-60"}`}
       style={{ gridTemplateColumns: EMPLOYEE_GRID }}
     >
@@ -104,21 +104,21 @@ export default function EmployeeRow({
         ) : (
           <div
             className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-[11px] font-semibold
-              ${active ? "bg-[#1B3A5C] text-white" : "bg-[#E4E6E9] text-[#98A1AC]"}`}
+              ${active ? "bg-navy-700 text-white" : "bg-[#E4E6E9] text-ink-muted"}`}
           >
             {initials(employee)}
           </div>
         )}
         <div className="min-w-0">
-          <p className="text-[13px] font-medium text-[#14181D] truncate">
+          <p className="text-[13px] font-medium text-ink truncate">
             {fullName}
             {isSelf && (
-              <span className="ml-1.5 text-[11px] font-normal text-[#98A1AC]">
+              <span className="ml-1.5 text-[11px] font-normal text-ink-muted">
                 (bạn)
               </span>
             )}
           </p>
-          <p className="text-[12px] text-[#98A1AC] truncate">
+          <p className="text-[12px] text-ink-muted truncate">
             {employee.account.email}
             {employee.position && `, ${employee.position}`}
           </p>
@@ -126,13 +126,13 @@ export default function EmployeeRow({
       </div>
 
       {/* 2. Điện thoại */}
-      <span className="text-[12px] text-[#5C6672] tabular-nums">
+      <span className="text-[12px] text-ink-secondary tabular-nums">
         {employee.phone}
       </span>
 
       {/* 3. Thâm niên — ngày cụ thể khi rê chuột */}
       <span
-        className="text-[12px] text-[#5C6672]"
+        className="text-[12px] text-ink-secondary"
         title={`Vào làm ${new Date(employee.hired_date).toLocaleDateString("vi-VN")}`}
       >
         {tenure(employee.hired_date)}
@@ -143,7 +143,7 @@ export default function EmployeeRow({
 
       {/* 5. Trạng thái */}
       <span
-        className={`flex items-center gap-1.5 text-[12px] ${active ? "text-[#0E7C5A]" : "text-[#98A1AC]"}`}
+        className={`flex items-center gap-1.5 text-[12px] ${active ? "text-[#0E7C5A]" : "text-ink-muted"}`}
       >
         <span className="w-1.5 h-1.5 rounded-full bg-current" />
         {active ? "Đang làm" : "Đã khoá"}
@@ -155,7 +155,7 @@ export default function EmployeeRow({
           ref={btnRef}
           onClick={() => setMenuOpen((o) => !o)}
           aria-label={`Thao tác với ${fullName}`}
-          className="w-7 h-7 flex items-center justify-center rounded text-[#98A1AC] hover:bg-[#E4E6E9] hover:text-[#14181D]"
+          className="w-7 h-7 flex items-center justify-center rounded text-ink-muted hover:bg-[#E4E6E9] hover:text-ink"
         >
           <MoreHorizontal
             size={15}
@@ -174,18 +174,18 @@ export default function EmployeeRow({
                 width: MENU_WIDTH,
                 visibility: pos ? "visible" : "hidden",
               }}
-              className="z-50 bg-white border border-[#E4E6E9] rounded-lg overflow-hidden shadow-[0_4px_12px_rgba(20,24,29,.10)]"
+              className="z-50 bg-white border border-line rounded-lg overflow-hidden shadow-[0_4px_12px_rgba(20,24,29,.10)]"
             >
-              <div className="px-3 py-2 border-b border-[#F0F1F3]">
-                <p className="text-[12px] font-medium text-[#14181D] truncate">
+              <div className="px-3 py-2 border-b border-line-soft">
+                <p className="text-[12px] font-medium text-ink truncate">
                   {fullName}
                 </p>
-                <p className="text-[11px] text-[#98A1AC]">{ROLE_LABELS[role]}</p>
+                <p className="text-[11px] text-ink-muted">{ROLE_LABELS[role]}</p>
               </div>
 
               {confirm ? (
                 <div className="p-2.5">
-                  <p className="text-[11px] text-[#5C6672] mb-2 leading-snug">
+                  <p className="text-[11px] text-ink-secondary mb-2 leading-snug">
                     {confirm === "lock"
                       ? `Khoá tài khoản ${fullName}? Người này sẽ không đăng nhập được nữa.`
                       : `Đặt lại mật khẩu của ${fullName} về mật khẩu mặc định?`}
@@ -205,13 +205,13 @@ export default function EmployeeRow({
                             )
                       }
                       className={`flex-1 h-7 rounded-md text-white text-[11px] font-medium disabled:opacity-60
-                        ${confirm === "lock" ? "bg-[#B4321F]" : "bg-[#1B3A5C]"}`}
+                        ${confirm === "lock" ? "bg-destructive" : "bg-navy-700"}`}
                     >
                       {confirm === "lock" ? "Khoá" : "Đặt lại"}
                     </button>
                     <button
                       onClick={() => setConfirm(null)}
-                      className="flex-1 h-7 rounded-md border border-[#E4E6E9] text-[11px] text-[#5C6672]"
+                      className="flex-1 h-7 rounded-md border border-line text-[11px] text-ink-secondary"
                     >
                       Huỷ
                     </button>
@@ -243,7 +243,7 @@ export default function EmployeeRow({
                     onClick={() => setConfirm("reset")}
                   />
                   {!isSelf && (
-                    <div className="border-t border-[#F0F1F3]">
+                    <div className="border-t border-line-soft">
                       {active ? (
                         <MenuItem
                           danger
@@ -300,9 +300,9 @@ function MenuItem({
     <button
       onClick={onClick}
       className={`w-full flex items-center gap-2.5 px-3 py-2 text-[12px]
-        ${danger ? "text-[#B4321F] hover:bg-[#FEF2F2]" : "text-[#14181D] hover:bg-[#F5F6F7]"}`}
+        ${danger ? "text-[#B4321F] hover:bg-[#FEF2F2]" : "text-ink hover:bg-row-hover"}`}
     >
-      <span className={danger ? "" : "text-[#98A1AC]"}>{icon}</span>
+      <span className={danger ? "" : "text-ink-muted"}>{icon}</span>
       {label}
     </button>
   );

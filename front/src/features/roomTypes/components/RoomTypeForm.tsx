@@ -109,13 +109,13 @@ function FormBody({
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="bg-white rounded-[10px] w-[520px] max-w-full max-h-[86vh] flex flex-col shadow-[0_8px_24px_rgba(20,24,29,.12)]">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#E4E6E9] shrink-0">
-          <h2 className="text-[14px] font-semibold text-[#14181D]">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-line shrink-0">
+          <h2 className="text-[14px] font-semibold text-ink">
             {isEdit ? `Sửa ${roomType!.name}` : "Thêm loại phòng"}
           </h2>
           <button
             onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded text-[#98A1AC] hover:bg-[#F5F6F7]"
+            className="w-7 h-7 flex items-center justify-center rounded text-ink-muted hover:bg-row-hover"
           >
             <X
               size={15}
@@ -137,7 +137,7 @@ function FormBody({
               {...register("name")}
               autoFocus
               placeholder="Deluxe"
-              className="w-full h-9 px-3 border border-[#E4E6E9] rounded-md text-[13px] outline-none focus:border-[#1B3A5C] focus:ring-2 focus:ring-[#1B3A5C]/10"
+              className="w-full h-9 px-3 border border-line rounded-md text-[13px] outline-none focus:border-navy-700 focus:ring-2 focus:ring-[#1B3A5C]/10"
             />
           </Field>
 
@@ -150,7 +150,7 @@ function FormBody({
                 type="number"
                 {...register("base_price")}
                 placeholder="500000"
-                className="w-full h-9 px-3 border border-[#E4E6E9] rounded-md text-[13px] tabular-nums outline-none focus:border-[#1B3A5C] focus:ring-2 focus:ring-[#1B3A5C]/10"
+                className="w-full h-9 px-3 border border-line rounded-md text-[13px] tabular-nums outline-none focus:border-navy-700 focus:ring-2 focus:ring-[#1B3A5C]/10"
               />
             </Field>
 
@@ -162,7 +162,7 @@ function FormBody({
                 type="number"
                 min={1}
                 {...register("capacity")}
-                className="w-full h-9 px-3 border border-[#E4E6E9] rounded-md text-[13px] tabular-nums outline-none focus:border-[#1B3A5C] focus:ring-2 focus:ring-[#1B3A5C]/10"
+                className="w-full h-9 px-3 border border-line rounded-md text-[13px] tabular-nums outline-none focus:border-navy-700 focus:ring-2 focus:ring-[#1B3A5C]/10"
               />
             </Field>
           </div>
@@ -188,10 +188,8 @@ function FormBody({
 
           <div>
             <div className="flex items-baseline justify-between mb-2">
-              <label className="text-[12px] font-medium text-[#14181D]">
-                Tiện nghi
-              </label>
-              <span className="text-[11px] text-[#98A1AC] tabular-nums">
+              <label className="text-[12px] font-medium text-ink">Tiện nghi</label>
+              <span className="text-[11px] text-ink-muted tabular-nums">
                 đã chọn {amenities.length}
               </span>
             </div>
@@ -199,7 +197,7 @@ function FormBody({
             <div className="space-y-3">
               {AMENITY_GROUPS.map((group) => (
                 <div key={group.title}>
-                  <p className="text-[11px] text-[#98A1AC] mb-1.5">{group.title}</p>
+                  <p className="text-[11px] text-ink-muted mb-1.5">{group.title}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {group.items.map((a) => {
                       const on = amenities.includes(a);
@@ -211,8 +209,8 @@ function FormBody({
                           className={`h-7 pl-2 pr-2.5 rounded-md border text-[12px] flex items-center gap-1.5 transition-colors
                             ${
                               on
-                                ? "bg-[#1B3A5C] border-[#1B3A5C] text-white"
-                                : "bg-white border-[#E4E6E9] text-[#5C6672] hover:border-[#CDD2D8]"
+                                ? "bg-navy-700 border-navy-700 text-white"
+                                : "bg-white border-line text-ink-secondary hover:border-line-input"
                             }`}
                         >
                           <span className="w-3 flex justify-center">
@@ -234,11 +232,11 @@ function FormBody({
           </div>
         </form>
 
-        <div className="flex gap-2 justify-end px-5 py-3.5 border-t border-[#E4E6E9] shrink-0">
+        <div className="flex gap-2 justify-end px-5 py-3.5 border-t border-line shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="h-9 px-4 rounded-md border border-[#E4E6E9] text-[13px] text-[#14181D] hover:bg-[#F5F6F7]"
+            className="h-9 px-4 rounded-md border border-line text-[13px] text-ink hover:bg-row-hover"
           >
             Huỷ
           </button>
@@ -246,7 +244,7 @@ function FormBody({
             type="submit"
             form="room-type-form"
             disabled={isSubmitting}
-            className="h-9 px-4 rounded-md bg-[#1B3A5C] text-white text-[13px] font-medium hover:bg-[#0F2440] disabled:opacity-60"
+            className="h-9 px-4 rounded-md bg-navy-700 text-white text-[13px] font-medium hover:bg-navy-hover disabled:opacity-60"
           >
             {isSubmitting ? "Đang lưu" : isEdit ? "Lưu thay đổi" : "Tạo loại phòng"}
           </button>
@@ -267,7 +265,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-[12px] font-medium text-[#14181D] mb-1.5">
+      <label className="block text-[12px] font-medium text-ink mb-1.5">
         {label}
       </label>
       {children}

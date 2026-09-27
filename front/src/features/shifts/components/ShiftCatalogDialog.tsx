@@ -24,11 +24,11 @@ export default function ShiftCatalogDialog({ open, onClose }: Props) {
       onOpenChange={(o) => !o && onClose()}
     >
       <DialogContent className="p-0 gap-0 sm:max-w-[540px] overflow-hidden">
-        <div className="px-5 pt-5 pb-3 border-b border-[#E4E6E9]">
-          <DialogTitle className="text-[16px] font-semibold text-[#14181D]">
+        <div className="px-5 pt-5 pb-3 border-b border-line">
+          <DialogTitle className="text-[16px] font-semibold text-ink">
             Danh mục ca
           </DialogTitle>
-          <DialogDescription className="text-[12px] text-[#5C6672] mt-1">
+          <DialogDescription className="text-[12px] text-ink-secondary mt-1">
             Giờ kết thúc nhỏ hơn giờ bắt đầu nghĩa là ca kéo qua nửa đêm.
           </DialogDescription>
         </div>
@@ -42,7 +42,7 @@ export default function ShiftCatalogDialog({ open, onClose }: Props) {
           />
         ))}
 
-        <p className="px-5 py-3 text-[11.5px] leading-relaxed text-[#98A1AC] bg-[#F5F6F7]">
+        <p className="px-5 py-3 text-[11.5px] leading-relaxed text-ink-muted bg-table-head">
           Giờ mới áp dụng cho mọi lịch đã xếp, kể cả các tuần đã qua, vì lịch chỉ lưu
           ca nào chứ không lưu giờ lúc xếp.
         </p>
@@ -79,16 +79,16 @@ function ShiftTimeRow({ shift }: { shift: Shift }) {
   };
 
   const timeInput =
-    "h-8 w-[92px] px-2 rounded-md border border-[#E4E6E9] text-[13px] tabular-nums outline-none focus:border-[#1B3A5C] focus:ring-2 focus:ring-[#C9A84C]/40";
+    "h-8 w-[92px] px-2 rounded-md border border-line text-[13px] tabular-nums outline-none focus:border-navy-700 focus:ring-2 focus:ring-[#C9A84C]/40";
 
   return (
-    <div className="px-5 py-3 flex items-center gap-3 border-b border-[#F0F1F3]">
+    <div className="px-5 py-3 flex items-center gap-3 border-b border-line-soft">
       <span
         className="w-[3px] h-8 rounded-full shrink-0"
         style={{ background: SHIFT_COLOR[shift.name] }}
       />
 
-      <div className="w-[76px] shrink-0 text-[13px] font-semibold text-[#14181D]">
+      <div className="w-[76px] shrink-0 text-[13px] font-semibold text-ink">
         {SHIFT_LABELS[shift.name]}
       </div>
 
@@ -99,7 +99,7 @@ function ShiftTimeRow({ shift }: { shift: Shift }) {
         aria-label="Giờ bắt đầu"
         className={timeInput}
       />
-      <span className="text-[12px] text-[#98A1AC]">đến</span>
+      <span className="text-[12px] text-ink-muted">đến</span>
       <input
         type="time"
         value={end}
@@ -110,7 +110,7 @@ function ShiftTimeRow({ shift }: { shift: Shift }) {
 
       <div className="flex-1 text-[11px]">
         {invalid && <span className="text-[#B4321F]">Giờ trùng nhau</span>}
-        {overnight && <span className="text-[#5C6672]">Qua đêm</span>}
+        {overnight && <span className="text-ink-secondary">Qua đêm</span>}
       </div>
 
       {changed && (
@@ -120,7 +120,7 @@ function ShiftTimeRow({ shift }: { shift: Shift }) {
             setStart(shift.start_time);
             setEnd(shift.end_time);
           }}
-          className="text-[12px] text-[#5C6672] hover:text-[#14181D]"
+          className="text-[12px] text-ink-secondary hover:text-ink"
         >
           Hoàn tác
         </button>
@@ -129,7 +129,7 @@ function ShiftTimeRow({ shift }: { shift: Shift }) {
         type="button"
         onClick={save}
         disabled={!changed || invalid || saving}
-        className="h-8 px-3 rounded-md bg-[#1B3A5C] text-white text-[12px] font-medium hover:bg-[#0F2440] disabled:opacity-40 disabled:cursor-not-allowed"
+        className="h-8 px-3 rounded-md bg-navy-700 text-white text-[12px] font-medium hover:bg-navy-hover disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {saving ? "Đang lưu" : "Lưu"}
       </button>

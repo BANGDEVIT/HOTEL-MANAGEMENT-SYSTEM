@@ -75,14 +75,14 @@ export default function ShiftManagement() {
 
   return (
     <div>
-      <div className="bg-white border border-[#E4E6E9] rounded-[10px] overflow-hidden">
+      <div className="bg-white border border-line rounded-[10px] overflow-hidden">
         {/* ===== Header ===== */}
-        <div className="px-5 py-4 flex items-start justify-between border-b border-[#E4E6E9]">
+        <div className="px-5 py-4 flex items-start justify-between border-b border-line">
           <div>
-            <h1 className="text-[19px] font-semibold text-[#14181D] tracking-[-0.01em]">
+            <h1 className="text-[19px] font-semibold text-ink tracking-[-0.01em]">
               Ca làm việc
             </h1>
-            <p className="text-[12px] text-[#98A1AC] mt-0.5 tabular-nums">
+            <p className="text-[12px] text-ink-muted mt-0.5 tabular-nums">
               {shifts.length} ca mỗi ngày
               {lastUpdated &&
                 `, cập nhật ${lastUpdated.toLocaleTimeString("vi-VN", {
@@ -95,12 +95,12 @@ export default function ShiftManagement() {
           <button
             type="button"
             onClick={() => setCatalogOpen(true)}
-            className="h-[34px] px-3.5 rounded-md border border-[#E4E6E9] text-[13px] text-[#14181D] hover:bg-[#F5F6F7] flex items-center gap-2"
+            className="h-[34px] px-3.5 rounded-md border border-line text-[13px] text-ink hover:bg-row-hover flex items-center gap-2"
           >
             <Clock
               size={14}
               strokeWidth={1.75}
-              className="text-[#5C6672]"
+              className="text-ink-secondary"
             />
             Danh mục ca
           </button>
@@ -123,7 +123,7 @@ export default function ShiftManagement() {
           <LoadingBar active={loadingSchedule} />
 
           {firstLoad ? (
-            <div className="py-16 text-center text-[13px] text-[#98A1AC]">
+            <div className="py-16 text-center text-[13px] text-ink-muted">
               Đang tải lịch làm việc
             </div>
           ) : (
@@ -152,7 +152,7 @@ export default function ShiftManagement() {
         </div>
 
         {/* ===== Chú thích ===== */}
-        <div className="px-5 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-[#E4E6E9] text-[11.5px] text-[#5C6672]">
+        <div className="px-5 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-line text-[11.5px] text-ink-secondary">
           {shifts.map((s) => (
             <span
               key={s.id}

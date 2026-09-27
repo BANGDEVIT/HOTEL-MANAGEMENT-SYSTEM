@@ -27,7 +27,7 @@ interface Props {
 export default function StaffGrid({ rows, days, today }: Props) {
   if (rows.length === 0) {
     return (
-      <div className="py-16 text-center text-[13px] text-[#98A1AC]">
+      <div className="py-16 text-center text-[13px] text-ink-muted">
         Chưa có nhân viên nào đang hoạt động
       </div>
     );
@@ -38,28 +38,28 @@ export default function StaffGrid({ rows, days, today }: Props) {
       <div className="min-w-[872px]">
         {/* ===== Tiêu đề: 1 + 7 + 1 = 9 ô ===== */}
         <div
-          className="grid bg-[#F5F6F7] border-b border-[#E4E6E9] h-10"
+          className="grid bg-table-head border-b border-line h-10"
           style={{ gridTemplateColumns: GRID }}
         >
-          <div className="px-4 flex items-center text-[11px] text-[#98A1AC]">
+          <div className="px-4 flex items-center text-[11px] text-ink-muted">
             Nhân viên
           </div>
           {days.map((day, i) => (
             <div
               key={day}
-              className={`border-l border-[#E4E6E9] flex flex-col items-center justify-center ${
+              className={`border-l border-line flex flex-col items-center justify-center ${
                 day === today ? "bg-[#FFF9EC] shadow-[inset_0_-2px_0_#C9A84C]" : ""
               }`}
             >
-              <span className="text-[11px] font-semibold text-[#14181D]">
+              <span className="text-[11px] font-semibold text-ink">
                 {DAY_SHORT[i]}
               </span>
-              <span className="text-[10px] text-[#98A1AC] tabular-nums">
+              <span className="text-[10px] text-ink-muted tabular-nums">
                 {dayMonth(day)}
               </span>
             </div>
           ))}
-          <div className="border-l border-[#E4E6E9] flex items-center justify-center text-[11px] text-[#98A1AC]">
+          <div className="border-l border-line flex items-center justify-center text-[11px] text-ink-muted">
             Số ca
           </div>
         </div>
@@ -70,7 +70,7 @@ export default function StaffGrid({ rows, days, today }: Props) {
           return (
             <div
               key={row.employee.id}
-              className="grid min-h-[48px] border-b border-[#F0F1F3] hover:bg-[#F5F6F7]"
+              className="grid min-h-[48px] border-b border-line-soft hover:bg-row-hover"
               style={{ gridTemplateColumns: GRID }}
             >
               <div className="px-4 flex items-center gap-2.5 min-w-0">
@@ -82,12 +82,12 @@ export default function StaffGrid({ rows, days, today }: Props) {
                 <div className="min-w-0">
                   <div
                     className={`text-[13px] truncate ${
-                      row.total ? "text-[#14181D]" : "text-[#98A1AC]"
+                      row.total ? "text-ink" : "text-ink-muted"
                     }`}
                   >
                     {row.employee.full_name}
                   </div>
-                  <div className="text-[11px] text-[#98A1AC] truncate">
+                  <div className="text-[11px] text-ink-muted truncate">
                     {row.employee.position}
                   </div>
                 </div>
@@ -96,7 +96,7 @@ export default function StaffGrid({ rows, days, today }: Props) {
               {row.byDay.map((shift, i) => (
                 <div
                   key={days[i]}
-                  className={`border-l border-[#F0F1F3] p-[5px] flex items-center ${
+                  className={`border-l border-line-soft p-[5px] flex items-center ${
                     days[i] === today ? "bg-[#FFFCF4]" : ""
                   }`}
                 >
@@ -117,8 +117,8 @@ export default function StaffGrid({ rows, days, today }: Props) {
               ))}
 
               <div
-                className={`border-l border-[#F0F1F3] flex items-center justify-center text-[13px] font-semibold tabular-nums ${
-                  over ? "text-[#B4321F]" : "text-[#14181D]"
+                className={`border-l border-line-soft flex items-center justify-center text-[13px] font-semibold tabular-nums ${
+                  over ? "text-[#B4321F]" : "text-ink"
                 }`}
                 title={over ? `Quá ${MAX_SHIFTS_PER_WEEK} ca mỗi tuần` : undefined}
               >

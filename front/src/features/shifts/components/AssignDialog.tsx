@@ -148,11 +148,11 @@ function AssignBody({
 
   return (
     <>
-      <div className="px-5 pt-5 pb-3 border-b border-[#E4E6E9]">
-        <DialogTitle className="text-[16px] font-semibold text-[#14181D]">
+      <div className="px-5 pt-5 pb-3 border-b border-line">
+        <DialogTitle className="text-[16px] font-semibold text-ink">
           {SHIFT_LABELS[shift.name]}, {dayName.toLowerCase()} {dayMonth(day)}
         </DialogTitle>
-        <DialogDescription className="text-[12px] text-[#5C6672] mt-1 tabular-nums">
+        <DialogDescription className="text-[12px] text-ink-secondary mt-1 tabular-nums">
           {shift.start_time} – {shift.end_time}
           {shift.is_overnight && " hôm sau"}, cần {SHIFT_REQUIRED[shift.name]} người,
           đang có {inShift}
@@ -162,21 +162,21 @@ function AssignBody({
           <Search
             size={14}
             strokeWidth={1.75}
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#98A1AC]"
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted"
           />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Tìm theo tên hoặc vị trí"
             autoFocus
-            className="w-full h-8 pl-8 pr-3 rounded-md border border-[#E4E6E9] text-[13px] outline-none focus:border-[#1B3A5C] focus:ring-2 focus:ring-[#C9A84C]/40"
+            className="w-full h-8 pl-8 pr-3 rounded-md border border-line text-[13px] outline-none focus:border-navy-700 focus:ring-2 focus:ring-[#C9A84C]/40"
           />
         </div>
       </div>
 
       <div className="max-h-[340px] overflow-y-auto">
         {list.length === 0 && (
-          <div className="py-10 text-center text-[12px] text-[#98A1AC]">
+          <div className="py-10 text-center text-[12px] text-ink-muted">
             Không tìm thấy nhân viên phù hợp
           </div>
         )}
@@ -187,8 +187,8 @@ function AssignBody({
             // <label> bọc cả dòng -> bấm vào tên cũng tick được checkbox
             <label
               key={e.id}
-              className={`flex items-center gap-3 px-5 h-[52px] border-b border-[#F0F1F3] ${
-                disabled ? "cursor-not-allowed" : "cursor-pointer hover:bg-[#F5F6F7]"
+              className={`flex items-center gap-3 px-5 h-[52px] border-b border-line-soft ${
+                disabled ? "cursor-not-allowed" : "cursor-pointer hover:bg-row-hover"
               }`}
             >
               <input
@@ -205,11 +205,11 @@ function AssignBody({
               />
               <div className="flex-1 min-w-0">
                 <div
-                  className={`text-[13px] truncate ${disabled ? "text-[#98A1AC]" : "text-[#14181D]"}`}
+                  className={`text-[13px] truncate ${disabled ? "text-ink-muted" : "text-ink"}`}
                 >
                   {e.full_name}
                 </div>
-                <div className="text-[11px] text-[#98A1AC] truncate">
+                <div className="text-[11px] text-ink-muted truncate">
                   {e.position}
                 </div>
               </div>
@@ -219,7 +219,7 @@ function AssignBody({
                 </span>
               )}
               {status.kind === "busy" && (
-                <span className="text-[11px] text-[#98A1AC] shrink-0">
+                <span className="text-[11px] text-ink-muted shrink-0">
                   Đang có {status.shiftLabel.toLowerCase()}
                 </span>
               )}
@@ -228,8 +228,8 @@ function AssignBody({
         })}
       </div>
 
-      <div className="px-5 py-3 flex items-center gap-2 border-t border-[#E4E6E9] bg-[#F5F6F7]">
-        <span className="flex-1 text-[12px] text-[#5C6672] tabular-nums">
+      <div className="px-5 py-3 flex items-center gap-2 border-t border-line bg-table-head">
+        <span className="flex-1 text-[12px] text-ink-secondary tabular-nums">
           {selected.size > 0
             ? `Đã chọn ${selected.size} người`
             : stillMissing > 0
@@ -239,7 +239,7 @@ function AssignBody({
         <button
           type="button"
           onClick={onClose}
-          className="h-8 px-3.5 rounded-md border border-[#E4E6E9] bg-white text-[13px] text-[#14181D] hover:bg-[#F5F6F7]"
+          className="h-8 px-3.5 rounded-md border border-line bg-white text-[13px] text-ink hover:bg-row-hover"
         >
           Huỷ
         </button>
@@ -247,7 +247,7 @@ function AssignBody({
           type="button"
           onClick={submit}
           disabled={selected.size === 0 || submitting}
-          className="h-8 px-3.5 rounded-md bg-[#1B3A5C] text-white text-[13px] font-medium hover:bg-[#0F2440] disabled:opacity-50 disabled:cursor-not-allowed"
+          className="h-8 px-3.5 rounded-md bg-navy-700 text-white text-[13px] font-medium hover:bg-navy-hover disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting ? "Đang xếp" : "Xếp ca"}
         </button>

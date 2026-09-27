@@ -35,7 +35,7 @@ export default function NextShiftCard({ nextShift, loaded, onExpired }: Props) {
   if (!loaded) {
     return (
       <Frame>
-        <span className="text-[13px] text-[#98A1AC]">Đang tải ca tiếp theo</span>
+        <span className="text-[13px] text-ink-muted">Đang tải ca tiếp theo</span>
       </Frame>
     );
   }
@@ -44,11 +44,11 @@ export default function NextShiftCard({ nextShift, loaded, onExpired }: Props) {
     return (
       <Frame>
         <div>
-          <div className="text-[11.5px] text-[#98A1AC]">Ca tiếp theo</div>
-          <div className="text-[15px] font-semibold text-[#14181D] mt-0.5">
+          <div className="text-[11.5px] text-ink-muted">Ca tiếp theo</div>
+          <div className="text-[15px] font-semibold text-ink mt-0.5">
             Chưa có ca nào sắp tới
           </div>
-          <div className="text-[12.5px] text-[#5C6672] mt-0.5">
+          <div className="text-[12.5px] text-ink-secondary mt-0.5">
             Quản lý chưa xếp lịch cho bạn
           </div>
         </div>
@@ -65,24 +65,24 @@ export default function NextShiftCard({ nextShift, loaded, onExpired }: Props) {
     <Frame color={SHIFT_COLOR[shift.name]}>
       <div className="min-w-0">
         <div
-          className={`text-[11.5px] ${ongoing ? "text-[#0E7C5A] font-medium" : "text-[#98A1AC]"}`}
+          className={`text-[11.5px] ${ongoing ? "text-[#0E7C5A] font-medium" : "text-ink-muted"}`}
         >
           {ongoing ? "Đang trong ca" : "Ca tiếp theo"}
         </div>
-        <div className="text-[22px] font-semibold text-[#14181D] tracking-[-0.01em] mt-0.5">
+        <div className="text-[22px] font-semibold text-ink tracking-[-0.01em] mt-0.5">
           {SHIFT_LABELS[shift.name]}, {relativeDay(work_date, todayYmd())}
         </div>
-        <div className="text-[13px] text-[#5C6672] mt-0.5 tabular-nums">
+        <div className="text-[13px] text-ink-secondary mt-0.5 tabular-nums">
           {shift.start_time} – {shift.end_time}
           {shift.is_overnight && " hôm sau"}
         </div>
       </div>
 
       <div className="ml-auto text-right shrink-0">
-        <div className="text-[11.5px] text-[#98A1AC]">
+        <div className="text-[11.5px] text-ink-muted">
           {ongoing ? "Kết thúc sau" : "Bắt đầu sau"}
         </div>
-        <div className="text-[15px] font-semibold text-[#1B3A5C] tabular-nums mt-0.5">
+        <div className="text-[15px] font-semibold text-navy-700 tabular-nums mt-0.5">
           {formatDuration((ongoing ? endsAt : startsAt) - now)}
         </div>
       </div>
@@ -98,7 +98,7 @@ function Frame({
   color?: string;
 }) {
   return (
-    <div className="mx-5 my-5 flex border border-[#E4E6E9] rounded-[10px] overflow-hidden">
+    <div className="mx-5 my-5 flex border border-line rounded-[10px] overflow-hidden">
       <span
         className="w-1 shrink-0"
         style={{ background: color }}

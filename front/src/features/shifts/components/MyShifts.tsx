@@ -59,12 +59,12 @@ export default function MyShifts() {
   const firstLoad = lastUpdated === null;
 
   return (
-    <div className="bg-white border border-[#E4E6E9] rounded-[10px] overflow-hidden">
-      <div className="px-5 py-4 border-b border-[#E4E6E9]">
-        <h1 className="text-[19px] font-semibold text-[#14181D] tracking-[-0.01em]">
+    <div className="bg-white border border-line rounded-[10px] overflow-hidden">
+      <div className="px-5 py-4 border-b border-line">
+        <h1 className="text-[19px] font-semibold text-ink tracking-[-0.01em]">
           Lịch làm việc
         </h1>
-        <p className="text-[12px] text-[#98A1AC] mt-0.5">
+        <p className="text-[12px] text-ink-muted mt-0.5">
           Lịch do quản lý xếp. Cần đổi ca thì báo quản lý.
         </p>
       </div>
@@ -82,10 +82,10 @@ export default function MyShifts() {
         onNext={nextWeek}
         onToday={thisWeek}
       >
-        <span className="text-[12px] text-[#5C6672] tabular-nums mr-2">
+        <span className="text-[12px] text-ink-secondary tabular-nums mr-2">
           Tuần này bạn có {mine.length} ca, {myHours} giờ
         </span>
-        <div className="flex border border-[#E4E6E9] rounded-md overflow-hidden">
+        <div className="flex border border-line rounded-md overflow-hidden">
           {[
             { value: false, label: "Cả nhóm" },
             { value: true, label: "Chỉ ca của tôi" },
@@ -95,10 +95,10 @@ export default function MyShifts() {
               type="button"
               aria-pressed={onlyMine === o.value}
               onClick={() => setOnlyMine(o.value)}
-              className={`h-7 px-3 text-[12px] ${i > 0 ? "border-l border-[#E4E6E9]" : ""} ${
+              className={`h-7 px-3 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
                 onlyMine === o.value
-                  ? "bg-[#1B3A5C] text-white font-medium"
-                  : "bg-white text-[#5C6672] hover:bg-[#F5F6F7]"
+                  ? "bg-navy-700 text-white font-medium"
+                  : "bg-white text-ink-secondary hover:bg-row-hover"
               }`}
             >
               {o.label}
@@ -110,7 +110,7 @@ export default function MyShifts() {
       <div className="relative">
         <LoadingBar active={loadingSchedule} />
         {firstLoad ? (
-          <div className="py-16 text-center text-[13px] text-[#98A1AC]">
+          <div className="py-16 text-center text-[13px] text-ink-muted">
             Đang tải lịch làm việc
           </div>
         ) : (
@@ -129,7 +129,7 @@ export default function MyShifts() {
         )}
       </div>
 
-      <div className="px-5 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-[#E4E6E9] text-[11.5px] text-[#5C6672]">
+      <div className="px-5 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-line text-[11.5px] text-ink-secondary">
         {shifts.map((s) => (
           <span
             key={s.id}

@@ -41,7 +41,7 @@ export default function ShiftSlot({
   return (
     // "group": để nút Thêm bên trong chỉ hiện khi di chuột vào ô này
     <div
-      className={`group relative min-h-[96px] p-[7px] pb-[5px] border-b border-l border-[#F0F1F3] transition-colors ${bg}`}
+      className={`group relative min-h-[96px] p-[7px] pb-[5px] border-b border-l border-line-soft transition-colors ${bg}`}
     >
       {items.map((item) => (
         <EmployeeChip
@@ -67,7 +67,7 @@ export default function ShiftSlot({
           aria-label={`Thêm nhân viên vào ${SHIFT_LABELS[shift.name].toLowerCase()} ngày ${dayMonth(day)}`}
           // Ô thiếu người: nút luôn hiện, vì đó là việc cần làm.
           // Ô đủ người: chỉ hiện khi di chuột vào hoặc bấm Tab tới, để bảng gọn lúc chỉ đọc.
-          className={`w-full h-6 rounded-[5px] border border-dashed border-[#CDD2D8] text-[11px] text-[#98A1AC] flex items-center justify-center gap-1 transition-opacity hover:border-[#1B3A5C] hover:text-[#1B3A5C] hover:bg-white focus-visible:opacity-100 ${
+          className={`w-full h-6 rounded-[5px] border border-dashed border-line-input text-[11px] text-ink-muted flex items-center justify-center gap-1 transition-opacity hover:border-navy-700 hover:text-navy-700 hover:bg-white focus-visible:opacity-100 ${
             short ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
         >

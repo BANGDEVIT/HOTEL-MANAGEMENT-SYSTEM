@@ -62,13 +62,13 @@ export default function RoomManagement() {
     // Thẻ ngoài KHÔNG có khung: chỉ để chứa card + các dialog
     <div>
       {/* Chỉ 1 khung duy nhất */}
-      <div className="bg-white border border-[#E4E6E9] rounded-[10px] overflow-hidden">
-        <div className="px-5 py-4 flex items-start justify-between border-b border-[#E4E6E9]">
+      <div className="bg-white border border-line rounded-[10px] overflow-hidden">
+        <div className="px-5 py-4 flex items-start justify-between border-b border-line">
           <div>
-            <h1 className="text-[19px] font-semibold text-[#14181D] tracking-[-0.01em]">
+            <h1 className="text-[19px] font-semibold text-ink tracking-[-0.01em]">
               Phòng
             </h1>
-            <p className="text-[12px] text-[#98A1AC] mt-0.5 tabular-nums">
+            <p className="text-[12px] text-ink-muted mt-0.5 tabular-nums">
               {countText}
               {timeText}
             </p>
@@ -77,18 +77,18 @@ export default function RoomManagement() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setAvailabilityOpen(true)}
-              className="h-[34px] px-3.5 rounded-md border border-[#E4E6E9] text-[13px] text-[#14181D] hover:bg-[#F5F6F7] flex items-center gap-2"
+              className="h-[34px] px-3.5 rounded-md border border-line text-[13px] text-ink hover:bg-row-hover flex items-center gap-2"
             >
               <CalendarSearch
                 size={14}
                 strokeWidth={1.75}
-                className="text-[#5C6672]"
+                className="text-ink-secondary"
               />
               Phòng trống theo ngày
             </button>
             <button
               onClick={openCreate}
-              className="h-[34px] px-3.5 rounded-md bg-[#1B3A5C] text-white text-[13px] font-medium hover:bg-[#0F2440] flex items-center gap-1.5"
+              className="h-[34px] px-3.5 rounded-md bg-navy-700 text-white text-[13px] font-medium hover:bg-navy-hover flex items-center gap-1.5"
             >
               <Plus
                 size={14}
@@ -109,22 +109,22 @@ export default function RoomManagement() {
         />
 
         {totalPages > 1 && (
-          <div className="px-5 py-3 flex items-center justify-between border-t border-[#E4E6E9]">
-            <span className="text-[12px] text-[#98A1AC] tabular-nums">
+          <div className="px-5 py-3 flex items-center justify-between border-t border-line">
+            <span className="text-[12px] text-ink-muted tabular-nums">
               Trang {filters.page} trên {totalPages}
             </span>
             <div className="flex gap-1.5">
               <button
                 disabled={filters.page <= 1}
                 onClick={() => setFilters({ page: filters.page - 1 })}
-                className="h-7 px-3 rounded-md border border-[#E4E6E9] text-[12px] text-[#14181D] hover:bg-[#F5F6F7] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-7 px-3 rounded-md border border-line text-[12px] text-ink hover:bg-row-hover disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Trước
               </button>
               <button
                 disabled={filters.page >= totalPages}
                 onClick={() => setFilters({ page: filters.page + 1 })}
-                className="h-7 px-3 rounded-md border border-[#E4E6E9] text-[12px] text-[#14181D] hover:bg-[#F5F6F7] disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-7 px-3 rounded-md border border-line text-[12px] text-ink hover:bg-row-hover disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Sau
               </button>

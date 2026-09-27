@@ -38,7 +38,7 @@ export default function ShiftGrid({
 }: Props) {
   if (shifts.length === 0) {
     return (
-      <div className="py-16 text-center text-[13px] text-[#98A1AC]">
+      <div className="py-16 text-center text-[13px] text-ink-muted">
         Chưa có ca nào trong danh mục
       </div>
     );
@@ -52,26 +52,26 @@ export default function ShiftGrid({
         style={{ gridTemplateColumns: GRID }}
       >
         {/* ===== Hàng tiêu đề: 1 ô góc + 7 ô ngày = 8 ô ===== */}
-        <div className="bg-[#F5F6F7] border-b border-[#E4E6E9]" />
+        <div className="bg-table-head border-b border-line" />
         {days.map((day, i) => {
           const isToday = day === today;
           return (
             <div
               key={day}
-              className={`px-2.5 py-2 border-b border-l border-[#E4E6E9] ${
+              className={`px-2.5 py-2 border-b border-l border-line ${
                 isToday
                   ? "bg-[#FFF9EC] shadow-[inset_0_-2px_0_#C9A84C]"
-                  : "bg-[#F5F6F7]"
+                  : "bg-table-head"
               }`}
             >
               <div
                 className={`text-[12px] font-semibold ${
-                  day < today ? "text-[#98A1AC]" : "text-[#14181D]"
+                  day < today ? "text-ink-muted" : "text-ink"
                 }`}
               >
                 {DAY_LABELS[i]}
               </div>
-              <div className="text-[11px] text-[#98A1AC] tabular-nums mt-px">
+              <div className="text-[11px] text-ink-muted tabular-nums mt-px">
                 {dayMonth(day)}
                 {isToday && ", hôm nay"}
               </div>
@@ -118,22 +118,22 @@ function ShiftRowLabel({
   showRequired: boolean;
 }) {
   return (
-    <div className="flex gap-2.5 px-3 py-2.5 border-b border-[#F0F1F3]">
+    <div className="flex gap-2.5 px-3 py-2.5 border-b border-line-soft">
       <span
         className="w-[3px] self-stretch rounded-full shrink-0"
         style={{ background: SHIFT_COLOR[shift.name] }}
       />
       <div className="min-w-0">
-        <div className="text-[13px] font-semibold text-[#14181D]">
+        <div className="text-[13px] font-semibold text-ink">
           {SHIFT_LABELS[shift.name]}
         </div>
-        <div className="text-[11px] text-[#5C6672] tabular-nums mt-px">
+        <div className="text-[11px] text-ink-secondary tabular-nums mt-px">
           {shift.start_time} – {shift.end_time}
           {shift.is_overnight && " hôm sau"}
         </div>
         {/* "Cần N người" là thông tin cho quản lý, nhân viên không cần xem */}
         {showRequired && (
-          <div className="text-[11px] text-[#98A1AC] mt-1">
+          <div className="text-[11px] text-ink-muted mt-1">
             Cần {SHIFT_REQUIRED[shift.name]} người
           </div>
         )}

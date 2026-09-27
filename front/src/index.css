@@ -48,31 +48,72 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Token của dự án. Mỗi biến --color-xxx tự sinh class bg-xxx / text-xxx / border-xxx */
+@theme {
+  --font-sans: "Be Vietnam Pro", system-ui, sans-serif;
+  --font-display: "Playfair Display", Georgia, serif;
+
+  --color-navy-900: #14263b;
+  --color-navy-700: #1b3a5c;
+  --color-navy-600: #274c73;
+  --color-navy-hover: #142d49;
+  --color-gold-50: #f6eed8;
+  --color-gold-500: #c9a84c;
+  --color-gold-700: #8a6d1f;
+  --color-cream-50: #fbfaf7;
+  --color-cream-100: #f5f3ee;
+  --color-row-hover: #fbfaf6;
+  --color-row-selected: #f4efe1;
+  --color-table-head: #faf8f3;
+  --color-line: #e6e1d6;
+  --color-line-soft: #eeeae1;
+  --color-line-input: #dcd6c8;
+  --color-segment: #efebe2;
+  --color-ink: #1c2733;
+  --color-ink-secondary: #5b6775;
+  --color-ink-muted: #6b7785;
+  --color-ink-faint: #8a94a0;
+  --color-sidebar-text: #b9c6d6;
+  --color-sidebar-subtle: #8fa0b4;
+  --color-on-navy-muted: #c5d1df;
+
+  --color-room-available: #1e7a5c;
+  --color-room-occupied: #9a3223;
+  --color-room-cleaning: #b7791f;
+  --color-room-maintenance: #6b7785;
+  --color-room-inactive: #a9a396;
+
+  --color-shift-morning: #b7791f;
+  --color-shift-afternoon: #1b3a5c;
+  --color-shift-evening: #1e6f55;
+  --color-shift-night: #43367a;
+}
+
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --background: #f5f3ee;
+  --foreground: #1c2733;
+  --card: #ffffff;
+  --card-foreground: #1c2733;
+  --popover: #ffffff;
+  --popover-foreground: #1c2733;
+  --primary: #1b3a5c;
+  --primary-foreground: #ffffff;
+  --secondary: #efebe2;
+  --secondary-foreground: #1b3a5c;
+  --muted: #faf8f3;
+  --muted-foreground: #6b7785;
+  --accent: #f4efe1;
+  --accent-foreground: #14263b;
+  --destructive: #9a3223;
+  --border: #e6e1d6;
+  --input: #dcd6c8;
+  --ring: #1b3a5c;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 10px;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);

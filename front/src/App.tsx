@@ -22,8 +22,8 @@ export default function App() {
 
   if (isInitializing) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#F5F6F7]">
-        <div className="w-7 h-7 border-2 border-[#E4E6E9] border-t-[#1B3A5C] rounded-full animate-spin" />
+      <div className="flex items-center justify-center h-screen bg-table-head">
+        <div className="w-7 h-7 border-2 border-line border-t-[#1B3A5C] rounded-full animate-spin" />
       </div>
     );
   }
@@ -42,7 +42,7 @@ export default function App() {
           },
           classNames: {
             error: "!bg-[#FEF2F2] !text-[#B4321F] !border-[#FBD5D0]",
-            // success: '!bg-[#1B3A5C] !text-white !border-[#1B3A5C]',
+            // success: '!bg-navy-700 !text-white !border-navy-700',
             success: "!bg-[#ECFDF5] !text-[#0E7C5A] !border-[#B7E4CE]",
           },
         }}

@@ -16,7 +16,7 @@ export default function RoomTally() {
   const setFilters = useRoomStore((s) => s.setFilters);
 
   return (
-    <div className="grid grid-cols-4 border-b border-[#E4E6E9]">
+    <div className="grid grid-cols-4 border-b border-line">
       {TALLY.map(({ status, label }, i) => {
         const active = activeStatus === status;
         return (
@@ -26,18 +26,18 @@ export default function RoomTally() {
             // Bấm ô đang chọn lần nữa thì bỏ lọc
             onClick={() => setFilters({ status: status, page: 1 })}
             className={`px-5 py-3.5 flex items-baseline gap-2 text-left transition-colors ${
-              i > 0 ? "border-l border-[#E4E6E9]" : ""
-            } ${active ? "bg-[#F5F6F7]" : "hover:bg-[#FAFBFB]"}`}
+              i > 0 ? "border-l border-line" : ""
+            } ${active ? "bg-table-head" : "hover:bg-[#FAFBFB]"}`}
           >
             <span
               className="w-[7px] h-[7px] rounded-full self-center"
               style={{ background: STATUS_COLOR[status] }}
             />
-            <span className="text-[19px] font-semibold text-[#14181D] tabular-nums">
+            <span className="text-[19px] font-semibold text-ink tabular-nums">
               {/* Chưa tải xong thì hiện "–", không hiện 0 kẻo người dùng tưởng thật */}
               {stats ? stats[status] : "–"}
             </span>
-            <span className="text-[12px] text-[#5C6672]">{label}</span>
+            <span className="text-[12px] text-ink-secondary">{label}</span>
           </button>
         );
       })}
