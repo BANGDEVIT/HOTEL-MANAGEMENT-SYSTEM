@@ -1,207 +1,68 @@
 /**
  * prisma/seed.ts
  *
- * Tạo sẵn: 4 role, 3 ca làm, 9 nhân viên (kèm account), và lịch trực 3 tuần
- * (tuần trước - tuần này - tuần sau) để bấm nút ‹ › trên UI là có data.
+ * Tạo bộ dữ liệu mẫu ĐẦY ĐỦ cho mọi màn hình:
+ *   role, ca làm, 9 nhân viên + lịch trực 3 tuần,
+ *   6 loại phòng, 29 phòng (5 tầng), 11 dịch vụ,
+ *   30 khách hàng (10 thành viên có tài khoản), ghi chú khách,
+ *   ~90 booking (đang ở, sắp đến, chờ duyệt, đã huỷ, lịch sử 5 tháng)
+ *   kèm phòng, dịch vụ đã dùng, hoá đơn, thanh toán, lịch sử trạng thái phòng.
  *
  * Chạy:  npx tsx prisma/seed.ts
  *
- * Script idempotent: chạy lại nhiều lần không tạo trùng.
+ * Chạy lại nhiều lần được. Mỗi lần chạy:
+ *   - Role, ca, nhân viên, loại phòng, phòng, dịch vụ: CHỈ TẠO NẾU CHƯA CÓ,
+ *     không ghi đè dữ liệu bạn đã sửa (giá, ảnh phòng...).
+ *   - ⚠ XOÁ SẠCH booking, hoá đơn, thanh toán rồi tạo lại.
+ *   - Khách hàng mẫu (SĐT/email trong data.ts) bị xoá và tạo lại.
+ *     Khách bạn tự nhập tay thì giữ nguyên.
  */
 import 'dotenv/config';
-import { PrismaClient, ShiftName } from '@prisma/client';
+import { PrismaClient, type RoomStatus } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcrypt';
+import {
+  BLOCKED_ROOMS,
+  CUSTOMER_NOTES,
+  CUSTOMERS,
+  DEFAULT_PASSWORD,
+  EMPLOYEES,
+  ROLES,
+  ROOM_TYPES,
+  ROOMS,
+  ROSTER,
+  SERVICES,
+  SHIFTS,
+} from './seed/data';
+import {
+  planBookings,
+  type SeedRoom,
+  type SeedService,
+} from './seed/plan-bookings';
+import { addDays, dateOnly, mondayOf, todayYmd, vnTime } from './seed/utils';
+
+if (process.env.NODE_ENV === 'production') {
+  throw new Error('Không chạy seed trên môi trường production.');
+}
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
-/* ============================ dữ liệu ============================ */
-
-const DEFAULT_PASSWORD = 'Hotel@123';
-
-const ROLES = ['admin', 'manager', 'staff', 'customer'] as const;
-
-// name là enum ShiftName trong schema: morning | afternoon | evening | night
-// FE tự map sang nhãn tiếng Việt. "evening" để dành, hiện chưa dùng.
-const SHIFTS = [
-  { code: 'S', name: ShiftName.morning, start: '06:00', end: '14:00' },
-  { code: 'C', name: ShiftName.afternoon, start: '14:00', end: '22:00' },
-  { code: 'D', name: ShiftName.night, start: '22:00', end: '06:00' },
-] as const;
-
-const EMPLOYEES = [
-  {
-    key: 'admin',
-    first: 'Trị',
-    last: 'Trần Quản',
-    email: 'admin@hotel.local',
-    phone: '0900000001',
-    position: 'Quản trị hệ thống',
-    salary: 25_000_000,
-    gender: 'male',
-    role: 'admin',
-    hired: '2022-01-10',
-  },
-  {
-    key: 'bang',
-    first: 'Bằng',
-    last: 'Bùi Công',
-    email: 'bang@hotel.local',
-    phone: '0900000002',
-    position: 'Quản lý lễ tân',
-    salary: 18_000_000,
-    gender: 'male',
-    role: 'manager',
-    hired: '2023-03-01',
-  },
-  {
-    key: 'tuan',
-    first: 'Tuấn',
-    last: 'Lê Minh',
-    email: 'tuan@hotel.local',
-    phone: '0900000003',
-    position: 'Quản lý ca',
-    salary: 15_000_000,
-    gender: 'male',
-    role: 'manager',
-    hired: '2023-08-15',
-  },
-  {
-    key: 'lan',
-    first: 'Lan',
-    last: 'Nguyễn Thị',
-    email: 'lan@hotel.local',
-    phone: '0900000004',
-    position: 'Lễ tân',
-    salary: 9_500_000,
-    gender: 'female',
-    role: 'staff',
-    hired: '2024-02-20',
-  },
-  {
-    key: 'mai',
-    first: 'Mai',
-    last: 'Đỗ Thị',
-    email: 'mai@hotel.local',
-    phone: '0900000005',
-    position: 'Lễ tân',
-    salary: 9_000_000,
-    gender: 'female',
-    role: 'staff',
-    hired: '2024-06-01',
-  },
-  {
-    key: 'ha',
-    first: 'Hà',
-    last: 'Phạm Thu',
-    email: 'ha@hotel.local',
-    phone: '0900000006',
-    position: 'Buồng phòng',
-    salary: 8_500_000,
-    gender: 'female',
-    role: 'staff',
-    hired: '2024-09-12',
-  },
-  {
-    key: 'son',
-    first: 'Sơn',
-    last: 'Ngô Thanh',
-    email: 'son@hotel.local',
-    phone: '0900000007',
-    position: 'Kỹ thuật',
-    salary: 10_000_000,
-    gender: 'male',
-    role: 'staff',
-    hired: '2023-11-05',
-  },
-  {
-    key: 'hung',
-    first: 'Hùng',
-    last: 'Trần Văn',
-    email: 'hung@hotel.local',
-    phone: '0900000008',
-    position: 'Bảo vệ',
-    salary: 8_000_000,
-    gender: 'male',
-    role: 'staff',
-    hired: '2024-01-08',
-  },
-  {
-    key: 'dat',
-    first: 'Đạt',
-    last: 'Võ Quốc',
-    email: 'dat@hotel.local',
-    phone: '0900000009',
-    position: 'Bảo vệ',
-    salary: 8_000_000,
-    gender: 'male',
-    role: 'staff',
-    hired: '2025-01-15',
-  },
-] as const;
-
-/**
- * Lịch mẫu 1 tuần, theo thứ tự [T2, T3, T4, T5, T6, T7, CN].
- * 'S' ca sáng | 'C' ca chiều | 'D' ca đêm | null nghỉ.
- *
- * Cố ý để vài lỗ hổng để UI hiện đúng trạng thái "thiếu người":
- *   - T5 ca sáng chỉ có 1 người (cần 2)
- *   - T5 và CN ca đêm trống hoàn toàn
- * Và cố ý để Lan / Sơn 6 ca/tuần để cột "Số ca" đỏ lên.
- */
-const ROSTER: Record<string, (string | null)[]> = {
-  bang: ['S', null, null, null, 'S', null, 'C'],
-  tuan: [null, 'C', 'S', null, 'C', 'C', 'S'],
-  lan: ['S', 'S', 'C', 'S', 'C', 'S', null],
-  mai: ['C', 'S', 'S', 'C', null, 'C', null],
-  ha: [null, null, 'S', 'C', 'S', 'S', 'S'],
-  son: ['C', 'C', 'C', null, 'S', 'C', 'C'],
-  hung: ['D', null, 'D', null, 'D', 'D', null],
-  dat: [null, 'D', null, null, 'D', null, null],
-  // admin không xếp ca
-};
-
-/* ============================ helper ============================ */
-
-/** "06:00" -> Date 1970-01-01T06:00:00Z. Phải có Z, xem giải thích trong service. */
 const toTime = (hhmm: string) => new Date(`1970-01-01T${hhmm}:00Z`);
 
-/** Thứ 2 (00:00 UTC) của tuần chứa ngày hôm nay. */
-function mondayOfThisWeek(): Date {
-  const now = new Date();
-  const d = new Date(
-    Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
-  );
-  const dow = d.getUTCDay(); // 0 = CN
-  d.setUTCDate(d.getUTCDate() - (dow === 0 ? 6 : dow - 1));
-  return d;
-}
+type EmployeeIds = Map<string, { id: string; accountId: string }>;
 
-const addDays = (d: Date, n: number) => {
-  const x = new Date(d);
-  x.setUTCDate(x.getUTCDate() + n);
-  return x;
-};
-
-const ymd = (d: Date) => d.toISOString().slice(0, 10);
-
-/* ============================ seed ============================ */
+/* ============================ Danh mục (chỉ tạo nếu chưa có) ============================ */
 
 async function seedRoles() {
   for (const name of ROLES) {
-    await prisma.role.upsert({
-      where: { name },
-      update: {},
-      create: { name },
-    });
+    await prisma.role.upsert({ where: { name }, update: {}, create: { name } });
   }
   console.log(`  ✓ ${ROLES.length} role`);
 }
 
 async function seedShifts() {
   const map = new Map<string, string>(); // code -> shift.id
-
   for (const s of SHIFTS) {
     const shift = await prisma.shift.upsert({
       where: { name: s.name },
@@ -214,118 +75,438 @@ async function seedShifts() {
     });
     map.set(s.code, shift.id);
   }
-
   console.log(`  ✓ ${SHIFTS.length} ca làm`);
   return map;
 }
 
-async function seedEmployees() {
-  const hash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
-  const map = new Map<string, string>(); // key -> employee.id
+async function seedEmployees(hash: string): Promise<EmployeeIds> {
+  const map: EmployeeIds = new Map();
 
   for (const e of EMPLOYEES) {
     const role = await prisma.role.findUniqueOrThrow({
       where: { name: e.role },
     });
 
-    // 1. Account
     const account = await prisma.account.upsert({
       where: { email: e.email },
       update: { is_active: true },
       create: { email: e.email, hash_password: hash, is_active: true },
     });
 
-    // 2. Gán role (xoá cũ rồi tạo lại cho chắc, tránh trùng)
     await prisma.roleAccount.deleteMany({ where: { account_id: account.id } });
     await prisma.roleAccount.create({
       data: { account_id: account.id, role_id: role.id },
     });
 
-    // 3. Employee
+    const data = {
+      first_name: e.first,
+      last_name: e.last,
+      email: e.email,
+      phone: e.phone,
+      position: e.position,
+      salary: e.salary,
+      hired_date: dateOnly(e.hired),
+      gender: e.gender,
+    };
     const employee = await prisma.employee.upsert({
       where: { account_id: account.id },
-      update: {
-        first_name: e.first,
-        last_name: e.last,
-        email: e.email,
-        phone: e.phone,
-        position: e.position,
-        salary: e.salary,
-        hired_date: new Date(`${e.hired}T00:00:00Z`),
-        gender: e.gender,
-      },
-      create: {
-        account_id: account.id,
-        first_name: e.first,
-        last_name: e.last,
-        email: e.email,
-        phone: e.phone,
-        position: e.position,
-        salary: e.salary,
-        hired_date: new Date(`${e.hired}T00:00:00Z`),
-        gender: e.gender,
-      },
+      update: data,
+      create: { account_id: account.id, ...data },
     });
 
-    map.set(e.key, employee.id);
+    map.set(e.key, { id: employee.id, accountId: account.id });
   }
 
-  console.log(
-    `  ✓ ${EMPLOYEES.length} nhân viên (mật khẩu: ${DEFAULT_PASSWORD})`,
-  );
+  console.log(`  ✓ ${EMPLOYEES.length} nhân viên`);
   return map;
 }
 
 async function seedAssignments(
   shiftIds: Map<string, string>,
-  employeeIds: Map<string, string>,
+  employees: EmployeeIds,
+  today: string,
 ) {
-  const monday = mondayOfThisWeek();
+  const monday = mondayOf(today);
   const rows: { employee_id: string; shift_id: string; work_date: Date }[] = [];
 
-  // 3 tuần: -1 (tuần trước), 0 (tuần này), +1 (tuần sau)
+  // 3 tuần: tuần trước, tuần này, tuần sau
   for (const [w, weekOffset] of [-1, 0, 1].entries()) {
-    const weekStart = addDays(monday, weekOffset * 7);
-
     for (let day = 0; day < 7; day++) {
-      const workDate = addDays(weekStart, day);
-
+      const workDate = addDays(monday, weekOffset * 7 + day);
       for (const [key, pattern] of Object.entries(ROSTER)) {
-        // Xoay lịch mỗi tuần 1 ngày để 3 tuần không giống hệt nhau
-        const code = pattern[(day + w) % 7];
+        const code = pattern[(day + w) % 7]; // xoay lịch mỗi tuần 1 ngày
         if (!code) continue;
-
         rows.push({
-          employee_id: employeeIds.get(key)!,
+          employee_id: employees.get(key)!.id,
           shift_id: shiftIds.get(code)!,
-          work_date: workDate,
+          work_date: dateOnly(workDate),
         });
       }
     }
   }
 
-  // Xoá lịch cũ trong khoảng seed rồi tạo lại — chạy lại script không bị trùng
   const from = addDays(monday, -7);
   const to = addDays(monday, 13);
   await prisma.employeeShift.deleteMany({
-    where: { work_date: { gte: from, lte: to } },
+    where: { work_date: { gte: dateOnly(from), lte: dateOnly(to) } },
   });
-
   await prisma.employeeShift.createMany({ data: rows, skipDuplicates: true });
 
-  console.log(
-    `  ✓ ${rows.length} lượt phân công, từ ${ymd(from)} đến ${ymd(to)}`,
-  );
-  console.log(`    Tuần hiện tại bắt đầu: ${ymd(monday)}`);
+  console.log(`  ✓ ${rows.length} lượt phân công (${from} → ${to})`);
 }
 
+async function seedRoomTypes() {
+  for (const t of ROOM_TYPES) {
+    await prisma.roomType.upsert({
+      where: { name: t.name },
+      update: {}, // đã có thì giữ nguyên giá / tiện ích bạn đã sửa
+      create: t,
+    });
+  }
+  const types = await prisma.roomType.findMany({
+    select: { id: true, name: true },
+  });
+  console.log(`  ✓ ${ROOM_TYPES.length} loại phòng`);
+  return new Map(types.map((t) => [t.name, t.id]));
+}
+
+async function seedRooms(typeIds: Map<string, string>): Promise<SeedRoom[]> {
+  for (const r of ROOMS) {
+    await prisma.room.upsert({
+      where: { room_number: r.number },
+      update: {}, // giữ ảnh, loại phòng bạn đã sửa
+      create: {
+        room_number: r.number,
+        floor: r.floor,
+        room_type_id: typeIds.get(r.type)!,
+        status: 'available',
+      },
+    });
+  }
+
+  // Đọc lại từ DB: nếu bạn đã đổi loại phòng của 1 phòng mẫu thì dùng đúng loại hiện tại
+  const rows = await prisma.room.findMany({
+    where: { room_number: { in: ROOMS.map((r) => r.number) } },
+    select: {
+      id: true,
+      room_number: true,
+      room_type: { select: { name: true, base_price: true } },
+    },
+    orderBy: { room_number: 'asc' },
+  });
+
+  console.log(`  ✓ ${rows.length} phòng`);
+  return rows.map((r) => ({
+    id: r.id,
+    number: r.room_number,
+    typeName: r.room_type.name,
+    price: Number(r.room_type.base_price), // Decimal -> number
+  }));
+}
+
+async function seedServices(): Promise<SeedService[]> {
+  const result: SeedService[] = [];
+  for (const s of SERVICES) {
+    // Service không có cột unique -> tự tìm theo tên
+    const found =
+      (await prisma.service.findFirst({ where: { name: s.name } })) ??
+      (await prisma.service.create({
+        data: { name: s.name, price: s.price, is_active: s.is_active ?? true },
+      }));
+    result.push({ key: s.key, id: found.id, price: Number(found.price) });
+  }
+  console.log(`  ✓ ${SERVICES.length} dịch vụ`);
+  return result;
+}
+
+/* ============================ Dọn dữ liệu giao dịch cũ ============================ */
+
+async function wipeTransactions(seedRoomIds: string[]) {
+  // Xoá con trước, cha sau: vướng khoá ngoại thì Postgres báo lỗi
+  const [payments, , invoices, , bookings] = await prisma.$transaction([
+    prisma.payment.deleteMany(),
+    prisma.bookingService.deleteMany(),
+    prisma.invoice.deleteMany(),
+    prisma.bookingRoom.deleteMany(),
+    prisma.booking.deleteMany(),
+    prisma.roomStatusHistory.deleteMany({
+      where: { room_id: { in: seedRoomIds } },
+    }),
+  ]);
+
+  // Khách mẫu: nhận diện bằng SĐT / email trong data.ts
+  const phones = CUSTOMERS.map((c) => c.phone);
+  const emails = CUSTOMERS.flatMap((c) => (c.email ? [c.email] : []));
+  const old = await prisma.customer.findMany({
+    where: {
+      OR: [{ phone: { in: phones } }, { account: { email: { in: emails } } }],
+    },
+    select: { id: true },
+  });
+  const oldIds = old.map((c) => c.id);
+  const accounts = await prisma.account.findMany({
+    where: { email: { in: emails } },
+    select: { id: true },
+  });
+  const accountIds = accounts.map((a) => a.id);
+
+  await prisma.$transaction([
+    prisma.customerNote.deleteMany({ where: { customer_id: { in: oldIds } } }),
+    prisma.customer.deleteMany({ where: { id: { in: oldIds } } }),
+    prisma.refreshToken.deleteMany({
+      where: { account_id: { in: accountIds } },
+    }),
+    prisma.roleAccount.deleteMany({
+      where: { account_id: { in: accountIds } },
+    }),
+    prisma.roomStatusHistory.updateMany({
+      where: { changed_by: { in: accountIds } },
+      data: { changed_by: null },
+    }),
+    prisma.account.deleteMany({ where: { id: { in: accountIds } } }),
+  ]);
+
+  console.log(
+    `  ✓ Đã xoá ${bookings.count} booking, ${invoices.count} hoá đơn, ${payments.count} thanh toán, ${oldIds.length} khách mẫu cũ`,
+  );
+}
+
+/* ============================ Khách hàng, booking, trạng thái phòng ============================ */
+
+async function seedCustomers(
+  hash: string,
+  today: string,
+  plan: ReturnType<typeof planBookings>,
+): Promise<Map<string, string>> {
+  const customerRole = await prisma.role.findUniqueOrThrow({
+    where: { name: 'customer' },
+  });
+  const ids = new Map<string, string>();
+
+  for (const c of CUSTOMERS) {
+    // Ngày tạo hồ sơ phải TRƯỚC booking đầu tiên của khách
+    const firstBooking = plan.firstSeen.get(c.key);
+    const joined = c.member
+      ? vnTime(addDays(today, -c.member.joinedDaysAgo), '10:00')
+      : undefined;
+    const candidates = [
+      joined,
+      firstBooking && new Date(firstBooking.getTime() - 60_000),
+    ].filter((d): d is Date => d instanceof Date);
+    const createdAt = candidates.length
+      ? new Date(Math.min(...candidates.map((d) => d.getTime())))
+      : vnTime(addDays(today, -1), '10:00');
+
+    if (c.member && !c.email)
+      throw new Error(`Thành viên "${c.key}" phải có email`);
+
+    const created = await prisma.customer.create({
+      data: {
+        first_name: c.first,
+        last_name: c.last,
+        phone: c.phone,
+        email: c.email ?? null,
+        id_type: c.id_type ?? null,
+        id_card: c.id_card ?? null,
+        nationality: c.nationality,
+        reward_points: plan.points.get(c.key) ?? 0,
+        source: c.member ? 'online_registration' : 'walk_in',
+        registered_at: c.member ? createdAt : null,
+        created_at: createdAt,
+        ...(c.member && {
+          account: {
+            create: {
+              email: c.email!,
+              hash_password: hash,
+              is_active: !c.member.locked,
+              created_at: createdAt,
+              role_account: { create: { role_id: customerRole.id } },
+            },
+          },
+        }),
+      },
+      select: { id: true },
+    });
+    ids.set(c.key, created.id);
+  }
+
+  const members = CUSTOMERS.filter((c) => c.member).length;
+  console.log(`  ✓ ${CUSTOMERS.length} khách hàng (${members} thành viên)`);
+  return ids;
+}
+
+async function seedBookings(
+  plan: ReturnType<typeof planBookings>,
+  customerIds: Map<string, string>,
+  employees: EmployeeIds,
+) {
+  for (const b of plan.bookings) {
+    const inv = b.invoice;
+
+    // Nested create: 1 lệnh tạo luôn booking + phòng + dịch vụ + hoá đơn + thanh toán
+    await prisma.booking.create({
+      data: {
+        customer_id: customerIds.get(b.customerKey)!,
+        created_by: b.createdBy ? employees.get(b.createdBy)!.id : null,
+        booking_type: b.type,
+        status: b.status,
+        check_in_date: dateOnly(b.from),
+        check_out_date: dateOnly(b.to),
+        actual_check_in: b.actualIn,
+        actual_check_out: b.actualOut,
+        created_at: b.createdAt,
+        booking_rooms: {
+          create: b.rooms.map((r) => ({
+            room_id: r.id,
+            price_per_night: r.price,
+          })),
+        },
+        booking_services: {
+          create: b.services.map((s) => ({
+            service_id: s.serviceId,
+            quantity: s.qty,
+            unit_price: s.unitPrice,
+            total_price: s.unitPrice * s.qty,
+            used_at: s.usedAt,
+          })),
+        },
+        ...(inv && {
+          invoices: {
+            create: {
+              total_amount: inv.total,
+              discount: inv.discount,
+              final_amount: inv.final,
+              status: inv.status,
+              created_at: inv.createdAt,
+              payments: {
+                create: inv.payments.map((p) => ({
+                  amount: p.amount,
+                  payment_method: p.method,
+                  paid_at: p.paidAt,
+                  created_at: p.paidAt,
+                  reference_number: p.reference,
+                })),
+              },
+            },
+          },
+        }),
+      },
+    });
+  }
+
+  const count = (s: string) =>
+    plan.bookings.filter((b) => b.status === s).length;
+  const invoices = plan.bookings.filter((b) => b.invoice).length;
+  const payments = plan.bookings.reduce(
+    (n, b) => n + (b.invoice?.payments.length ?? 0),
+    0,
+  );
+  console.log(
+    `  ✓ ${plan.bookings.length} booking: ${count('checked_in')} đang ở, ${count('confirmed')} đã xác nhận, ` +
+      `${count('pending')} chờ duyệt, ${count('checked_out')} đã trả phòng, ${count('cancelled')} đã huỷ`,
+  );
+  console.log(`  ✓ ${invoices} hoá đơn, ${payments} thanh toán`);
+}
+
+async function seedRoomStatus(
+  plan: ReturnType<typeof planBookings>,
+  rooms: SeedRoom[],
+  employees: EmployeeIds,
+) {
+  // Gom theo trạng thái -> mỗi trạng thái 1 lệnh updateMany
+  const groups = new Map<RoomStatus, string[]>();
+  for (const [roomId, status] of plan.roomStatus) {
+    groups.set(status, [...(groups.get(status) ?? []), roomId]);
+  }
+  for (const [status, ids] of groups) {
+    await prisma.room.updateMany({
+      where: { id: { in: ids } },
+      data: { status },
+    });
+  }
+
+  // Phòng bạn tự tạo đang "Có khách" nhưng booking đã bị xoá -> trả về "Trống"
+  const fixed = await prisma.room.updateMany({
+    where: { id: { notIn: rooms.map((r) => r.id) }, status: 'occupied' },
+    data: { status: 'available' },
+  });
+
+  await prisma.roomStatusHistory.createMany({
+    data: plan.roomEvents.map((e) => ({
+      room_id: e.roomId,
+      old_status: e.from,
+      new_status: e.to,
+      changed_at: e.at,
+      changed_by: employees.get(e.by)!.accountId,
+    })),
+  });
+
+  const summary = [...groups]
+    .map(([s, ids]) => `${ids.length} ${s}`)
+    .join(', ');
+  console.log(`  ✓ Trạng thái phòng: ${summary}`);
+  console.log(`  ✓ ${plan.roomEvents.length} dòng lịch sử trạng thái phòng`);
+  if (fixed.count)
+    console.log(
+      `  ✓ ${fixed.count} phòng khác đang "occupied" không có booking -> available`,
+    );
+}
+
+async function seedNotes(
+  customerIds: Map<string, string>,
+  employees: EmployeeIds,
+  today: string,
+) {
+  await prisma.customerNote.createMany({
+    data: CUSTOMER_NOTES.map((n) => ({
+      customer_id: customerIds.get(n.customer)!,
+      author_id: employees.get(n.author)!.id,
+      content: n.content,
+      created_at: vnTime(addDays(today, -n.daysAgo), '15:30'),
+    })),
+  });
+  console.log(`  ✓ ${CUSTOMER_NOTES.length} ghi chú khách hàng`);
+}
+
+/* ============================ main ============================ */
+
 async function main() {
-  console.log('Seeding...');
+  const today = todayYmd();
+  const now = new Date();
+  const host = new URL(process.env.DATABASE_URL ?? 'postgres://unknown').host;
+  console.log(`Seeding vào ${host}, hôm nay (giờ VN) = ${today}\n`);
+
+  const hash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+
+  console.log('Danh mục');
   await seedRoles();
   const shiftIds = await seedShifts();
-  const employeeIds = await seedEmployees();
-  await seedAssignments(shiftIds, employeeIds);
-  console.log('Xong.');
+  const employees = await seedEmployees(hash);
+  await seedAssignments(shiftIds, employees, today);
+  const typeIds = await seedRoomTypes();
+  const rooms = await seedRooms(typeIds);
+  const services = await seedServices();
+
+  console.log('\nGiao dịch');
+  await wipeTransactions(rooms.map((r) => r.id));
+  const plan = planBookings({ today, now, rooms, services });
+  const customerIds = await seedCustomers(hash, today, plan);
+  await seedBookings(plan, customerIds, employees);
+  await seedRoomStatus(plan, rooms, employees);
+  await seedNotes(customerIds, employees, today);
+
+  console.log(`\nXong. Mật khẩu mọi tài khoản: ${DEFAULT_PASSWORD}`);
+  console.table([
+    { role: 'admin', email: 'admin@hotel.local' },
+    { role: 'manager', email: 'bang@hotel.local' },
+    { role: 'staff', email: 'lan@hotel.local' },
+    { role: 'customer', email: 'khoa.tran@example.com' },
+    { role: 'customer (bị khoá)', email: 'quan.vo@example.com' },
+  ]);
+  const blocked = Object.entries(BLOCKED_ROOMS)
+    .map(([n, b]) => `${n} ${b.status}`)
+    .join(', ');
+  console.log(`Phòng không kinh doanh: ${blocked}`);
 }
 
 main()
