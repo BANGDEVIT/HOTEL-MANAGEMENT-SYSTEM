@@ -1,32 +1,35 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsEmail,
   IsNotEmpty,
   IsString,
   Matches,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 
 export class LinkAccountDto {
   @ApiProperty({
-    example: 'user@gmail.com',
-    description: 'Email đăng ký',
+    example: 'khoa.tran@gmail.com',
+    description: 'Email đăng nhập',
   })
-  @IsEmail({}, { message: 'Please provide a valid email address' })
-  @IsNotEmpty({ message: 'Email is required' })
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  @IsEmail({}, { message: 'Email không hợp lệ' })
+  @IsNotEmpty({ message: 'Nhập email' })
   email: string;
 
   @ApiProperty({
     example: 'Password@123',
-    description:
-      'Mật khẩu — tối thiểu 8 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt',
+    description: '8–72 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt',
   })
   @IsString()
-  @IsNotEmpty({ message: 'Password is required' })
-  @MinLength(8, { message: '"Password must be at least 8 characters long' })
-  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, {
-    message:
-      'Password muut contain at least one uppercase letter, one lowercase letter, one number and one special character ',
+  @MinLength(8, { message: 'Mật khẩu ít nhất 8 ký tự' })
+  @MaxLength(72, { message: 'Mật khẩu tối đa 72 ký tự' })
+  @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/, {
+    message: 'Mật khẩu phải có chữ hoa, chữ thường, số và ký tự đặc biệt',
   })
   password: string;
 }

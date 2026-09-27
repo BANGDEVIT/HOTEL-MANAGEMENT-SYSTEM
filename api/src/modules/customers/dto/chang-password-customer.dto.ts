@@ -1,19 +1,8 @@
 // dto/change-password.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsEmail,
-  IsNotEmpty,
-  IsString,
-  Matches,
-  MinLength,
-} from 'class-validator';
+import { IsNotEmpty, IsString, Matches, MinLength } from 'class-validator';
 
 export class ChangePasswordDto {
-  @ApiProperty({ example: 'customer@gmail.com' })
-  @IsEmail({}, { message: 'Email không hợp lệ' })
-  @IsNotEmpty()
-  email: string;
-
   @ApiProperty({ example: 'OldPassword@123' })
   @IsNotEmpty({ message: 'Mật khẩu hiện tại không được để trống' })
   @IsString()

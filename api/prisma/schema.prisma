@@ -70,6 +70,11 @@ enum BedType {
   queen // 1 giường queen
 }
 
+enum IdType {
+  cccd
+  passport
+}
+
 // ===== MODELS =====
 
 model Account {
@@ -105,6 +110,7 @@ model Customer {
   email                String?        @db.VarChar
   phone                String?        @db.VarChar
   id_card              String?        @db.VarChar
+  id_type              IdType?
   id_card_img_url      String?
   id_card_img_back_url String?
   nationality          String?        @db.VarChar
@@ -113,6 +119,7 @@ model Customer {
   registered_at        DateTime? // thời điểm có tài khoản
   created_at           DateTime       @default(now())
   updated_at           DateTime       @updatedAt
+  notes                CustomerNote[]
 
   account  Account?  @relation(fields: [account_id], references: [id])
   bookings Booking[]
@@ -120,7 +127,21 @@ model Customer {
   @@index([email])
   @@index([phone])
   @@index([source])
+  @@index([id_card])
   @@index([account_id])
+}
+
+model CustomerNote {
+  id          String   @id @default(uuid()) @db.Uuid
+  customer_id String   @db.Uuid
+  author_id   String   @db.Uuid // nhân viên viết ghi chú
+  content     String   @db.VarChar(500)
+  created_at  DateTime @default(now())
+
+  customer Customer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+  author   Employee @relation(fields: [author_id], references: [id])
+
+  @@index([customer_id, created_at]) // lấy ghi chú của 1 khách, mới nhất trước
 }
 
 model Employee {
@@ -141,6 +162,7 @@ model Employee {
   employee_shifts EmployeeShift[]
   // room_status_histories RoomStatusHistory[]
   // guests                Guest[]
+  customer_notes  CustomerNote[]
 }
 
 model EmployeeShift {
