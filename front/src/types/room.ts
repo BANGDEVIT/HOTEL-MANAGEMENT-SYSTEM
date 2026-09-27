@@ -106,11 +106,11 @@ export const STATUS_LABELS: Record<RoomStatus, string> = {
 
 /** Màu đặc cho thanh trạng thái bên trái mỗi hàng — không dùng gradient */
 export const STATUS_COLOR: Record<RoomStatus, string> = {
-  available: "#0E7C5A",
-  occupied: "#B4321F",
-  cleaning: "#C77D10",
-  maintenance: "#6B7684",
-  inactive: "#98A1AC",
+  available: "var(--color-room-available)",
+  occupied: "var(--color-room-occupied)",
+  cleaning: "var(--color-room-cleaning)",
+  maintenance: "var(--color-room-maintenance)",
+  inactive: "var(--color-room-inactive)",
 };
 
 export const BED_TYPE_LABELS: Record<BedType, string> = {

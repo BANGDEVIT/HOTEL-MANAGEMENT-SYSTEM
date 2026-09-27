@@ -47,7 +47,7 @@ export default function RoomToolbar() {
   };
 
   return (
-    <div className="px-5 py-2.5 flex items-center gap-1.5 border-b border-[#E4E6E9] flex-wrap">
+    <div className="px-5 py-2.5 flex items-center gap-1.5 border-b border-line flex-wrap">
       {STATUS_CHIPS.map((chip) => (
         <button
           key={chip.value}
@@ -56,7 +56,7 @@ export default function RoomToolbar() {
             ${
               filters.status === chip.value
                 ? "bg-[#14181D] text-white border-[#14181D]"
-                : "bg-white text-[#5C6672] border-[#E4E6E9] hover:border-[#CDD2D8]"
+                : "bg-white text-ink-secondary border-line hover:border-line-input"
             }`}
         >
           {chip.label}
@@ -69,7 +69,7 @@ export default function RoomToolbar() {
           <ArrowUpDown
             size={13}
             strokeWidth={1.75}
-            className="text-[#98A1AC]"
+            className="text-ink-muted"
           />
           <Dropdown
             value={filters.sortBy}
@@ -80,8 +80,8 @@ export default function RoomToolbar() {
           <button
             onClick={() => toggleSort(filters.sortBy)}
             title={filters.order === "asc" ? "Tăng dần" : "Giảm dần"}
-            className="h-7 w-7 flex items-center justify-center rounded-md border border-[#E4E6E9]
-               text-[12px] text-[#5C6672] hover:bg-[#F5F6F7]"
+            className="h-7 w-7 flex items-center justify-center rounded-md border border-line
+               text-[12px] text-ink-secondary hover:bg-row-hover"
           >
             {filters.order === "asc" ? "↑" : "↓"}
           </button>
@@ -103,20 +103,20 @@ export default function RoomToolbar() {
           placeholder="Tầng"
           value={filters.floor}
           onChange={(e) => setFilters({ floor: e.target.value })}
-          className="h-7 w-[68px] px-2.5 border border-[#E4E6E9] rounded-md text-[12px] outline-none"
+          className="h-7 w-[68px] px-2.5 border border-line rounded-md text-[12px] outline-none"
         />
 
-        <div className="flex items-center gap-2 h-7 px-2.5 border border-[#E4E6E9] rounded-md w-[180px]">
+        <div className="flex items-center gap-2 h-7 px-2.5 border border-line rounded-md w-[180px]">
           <Search
             size={13}
             strokeWidth={1.75}
-            className="text-[#98A1AC] shrink-0"
+            className="text-ink-muted shrink-0"
           />
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Số phòng"
-            className="text-[12px] outline-none w-full text-[#14181D]"
+            className="text-[12px] outline-none w-full text-ink"
           />
         </div>
 
@@ -124,7 +124,7 @@ export default function RoomToolbar() {
           <button
             onClick={clearAll}
             title="Bỏ lọc"
-            className="h-7 w-7 flex items-center justify-center border border-[#E4E6E9] rounded-md text-[#98A1AC] hover:text-[#14181D] hover:bg-[#F5F6F7]"
+            className="h-7 w-7 flex items-center justify-center border border-line rounded-md text-ink-muted hover:text-ink hover:bg-row-hover"
           >
             <X
               size={13}

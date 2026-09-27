@@ -1,8 +1,8 @@
-import type { ReactNode } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { isoWeek, weekLabel } from '../utils/week';
+import type { ReactNode } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { isoWeek, weekLabel } from "../utils/week";
 
-export type ShiftView = 'grid' | 'staff';
+export type ShiftView = "grid" | "staff";
 
 interface Props {
   weekStart: string;
@@ -19,12 +19,12 @@ interface Props {
 }
 
 const VIEWS: { value: ShiftView; label: string }[] = [
-  { value: 'grid', label: 'Theo ca' },
-  { value: 'staff', label: 'Theo nhân viên' },
+  { value: "grid", label: "Theo ca" },
+  { value: "staff", label: "Theo nhân viên" },
 ];
 
 const NAV_BTN =
-  'w-7 h-7 rounded-md border border-[#E4E6E9] bg-white flex items-center justify-center text-[#5C6672] hover:bg-[#F5F6F7] hover:text-[#14181D]';
+  "w-7 h-7 rounded-md border border-line bg-white flex items-center justify-center text-ink-secondary hover:bg-row-hover hover:text-ink";
 
 export default function WeekNavigator({
   weekStart,
@@ -37,20 +37,38 @@ export default function WeekNavigator({
   children,
 }: Props) {
   return (
-    <div className="px-5 py-2.5 flex flex-wrap items-center gap-2.5 border-b border-[#E4E6E9]">
+    <div className="px-5 py-2.5 flex flex-wrap items-center gap-2.5 border-b border-line">
       {/* ===== Bên trái: chuyển tuần ===== */}
       <div className="flex gap-1">
-        <button type="button" onClick={onPrev} aria-label="Tuần trước" className={NAV_BTN}>
-          <ChevronLeft size={15} strokeWidth={1.75} />
+        <button
+          type="button"
+          onClick={onPrev}
+          aria-label="Tuần trước"
+          className={NAV_BTN}
+        >
+          <ChevronLeft
+            size={15}
+            strokeWidth={1.75}
+          />
         </button>
-        <button type="button" onClick={onNext} aria-label="Tuần sau" className={NAV_BTN}>
-          <ChevronRight size={15} strokeWidth={1.75} />
+        <button
+          type="button"
+          onClick={onNext}
+          aria-label="Tuần sau"
+          className={NAV_BTN}
+        >
+          <ChevronRight
+            size={15}
+            strokeWidth={1.75}
+          />
         </button>
       </div>
 
-      <div className="text-[14px] font-semibold text-[#14181D] tabular-nums">
+      <div className="text-[14px] font-semibold text-ink tabular-nums">
         {weekLabel(weekStart)}
-        <span className="ml-2 text-[11px] font-normal text-[#98A1AC]">Tuần {isoWeek(weekStart)}</span>
+        <span className="ml-2 text-[11px] font-normal text-ink-muted">
+          Tuần {isoWeek(weekStart)}
+        </span>
       </div>
 
       {/* Đang ở tuần này rồi thì nút này vô nghĩa -> ẩn */}
@@ -58,7 +76,7 @@ export default function WeekNavigator({
         <button
           type="button"
           onClick={onToday}
-          className="h-7 px-2.5 rounded-md border border-[#E4E6E9] text-[12px] text-[#14181D] hover:bg-[#F5F6F7]"
+          className="h-7 px-2.5 rounded-md border border-line text-[12px] text-ink hover:bg-row-hover"
         >
           Về tuần này
         </button>
@@ -71,17 +89,17 @@ export default function WeekNavigator({
       {children}
 
       {view && onViewChange && (
-        <div className="flex border border-[#E4E6E9] rounded-md overflow-hidden">
+        <div className="flex border border-line rounded-md overflow-hidden">
           {VIEWS.map((v, i) => (
             <button
               key={v.value}
               type="button"
               aria-pressed={view === v.value}
               onClick={() => onViewChange(v.value)}
-              className={`h-7 px-3 text-[12px] ${i > 0 ? 'border-l border-[#E4E6E9]' : ''} ${
+              className={`h-7 px-3 text-[12px] ${i > 0 ? "border-l border-line" : ""} ${
                 view === v.value
-                  ? 'bg-[#1B3A5C] text-white font-medium'
-                  : 'bg-white text-[#5C6672] hover:bg-[#F5F6F7]'
+                  ? "bg-navy-700 text-white font-medium"
+                  : "bg-white text-ink-secondary hover:bg-row-hover"
               }`}
             >
               {v.label}

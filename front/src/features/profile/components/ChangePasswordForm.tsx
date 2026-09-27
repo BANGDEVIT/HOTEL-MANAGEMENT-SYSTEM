@@ -61,7 +61,7 @@ export default function ChangePasswordForm() {
 
   const type = show ? "text" : "password";
   const cls = (hasError: boolean) =>
-    `${INPUT} ${hasError ? "border-[#B4321F]" : "border-[#E4E6E9]"}`;
+    `${INPUT} ${hasError ? "border-[#B4321F]" : "border-line"}`;
 
   return (
     <form
@@ -70,15 +70,15 @@ export default function ChangePasswordForm() {
     >
       <div className="px-5 pt-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-[14px] font-semibold text-[#14181D]">Đổi mật khẩu</h2>
-          <p className="text-[12px] text-[#98A1AC] mt-0.5">
+          <h2 className="text-[14px] font-semibold text-ink">Đổi mật khẩu</h2>
+          <p className="text-[12px] text-ink-muted mt-0.5">
             Dùng mật khẩu bạn không dùng ở nơi khác.
           </p>
         </div>
         <button
           type="button"
           onClick={() => setShow((v) => !v)}
-          className="h-7 px-2.5 rounded-md text-[12px] text-[#5C6672] hover:bg-[#F5F6F7] flex items-center gap-1.5"
+          className="h-7 px-2.5 rounded-md text-[12px] text-ink-secondary hover:bg-row-hover flex items-center gap-1.5"
         >
           {show ? (
             <EyeOff
@@ -140,7 +140,7 @@ export default function ChangePasswordForm() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="h-8 px-3.5 rounded-md bg-[#1B3A5C] text-white text-[12.5px] font-medium hover:bg-[#0F2440] disabled:opacity-45 disabled:cursor-not-allowed"
+          className="h-8 px-3.5 rounded-md bg-navy-700 text-white text-[12.5px] font-medium hover:bg-navy-hover disabled:opacity-45 disabled:cursor-not-allowed"
         >
           {isSubmitting ? "Đang đổi" : "Đổi mật khẩu"}
         </button>

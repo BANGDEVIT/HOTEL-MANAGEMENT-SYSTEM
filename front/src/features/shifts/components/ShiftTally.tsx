@@ -25,16 +25,16 @@ export default function ShiftTally({ tally }: { tally: WeekTally }) {
   ];
 
   return (
-    <div className="flex border-b border-[#E4E6E9] overflow-x-auto">
+    <div className="flex border-b border-line overflow-x-auto">
       {cells.map((c, i) => (
         <div
           key={c.label}
-          className={`px-5 py-2.5 min-w-[132px] ${i < cells.length - 1 ? "border-r border-[#F0F1F3]" : ""}`}
+          className={`px-5 py-2.5 min-w-[132px] ${i < cells.length - 1 ? "border-r border-line-soft" : ""}`}
         >
-          <div className="text-[11px] text-[#98A1AC]">{c.label}</div>
+          <div className="text-[11px] text-ink-muted">{c.label}</div>
           <div
             className={`text-[17px] font-semibold tabular-nums mt-px ${
-              c.tone ? TONE_CLASS[c.tone] : "text-[#14181D]"
+              c.tone ? TONE_CLASS[c.tone] : "text-ink"
             }`}
           >
             {c.value}

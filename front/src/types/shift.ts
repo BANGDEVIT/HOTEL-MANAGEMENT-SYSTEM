@@ -79,10 +79,10 @@ export const SHIFT_LABELS: Record<ShiftName, string> = {
 };
 
 export const SHIFT_COLOR: Record<ShiftName, string> = {
-  morning: "#C77D10",
-  afternoon: "#1B3A5C",
-  evening: "#0E7C5A",
-  night: "#4B3F72",
+  morning: "var(--color-shift-morning)",
+  afternoon: "var(--color-shift-afternoon)",
+  evening: "var(--color-shift-evening)",
+  night: "var(--color-shift-night)",
 };
 
 /**

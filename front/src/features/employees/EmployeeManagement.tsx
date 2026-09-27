@@ -68,18 +68,18 @@ export default function EmployeeManagement() {
 
   return (
     <div>
-      <div className="relative bg-white border border-[#E4E6E9] rounded-[10px]">
+      <div className="relative bg-white border border-line rounded-[10px]">
         <div className="absolute inset-x-0 top-0 h-[2px] overflow-hidden rounded-t-[10px] z-10">
           <LoadingBar active={loading} />
         </div>
 
         {/* Tiêu đề */}
-        <div className="px-5 py-4 flex items-start justify-between border-b border-[#E4E6E9]">
+        <div className="px-5 py-4 flex items-start justify-between border-b border-line">
           <div>
-            <h1 className="text-[19px] font-semibold text-[#14181D] tracking-[-0.01em]">
+            <h1 className="text-[19px] font-semibold text-ink tracking-[-0.01em]">
               Nhân viên
             </h1>
-            <p className="text-[12px] text-[#98A1AC] mt-0.5 tabular-nums">
+            <p className="text-[12px] text-ink-muted mt-0.5 tabular-nums">
               {firstLoad
                 ? "Đang tải danh sách nhân viên…"
                 : `${employees.length} người, ${activeCount} đang làm`}
@@ -87,7 +87,7 @@ export default function EmployeeManagement() {
           </div>
           <button
             onClick={openCreate}
-            className="h-[34px] px-3.5 rounded-md bg-[#1B3A5C] text-white text-[13px] font-medium hover:bg-[#0F2440] flex items-center gap-1.5"
+            className="h-[34px] px-3.5 rounded-md bg-navy-700 text-white text-[13px] font-medium hover:bg-navy-hover flex items-center gap-1.5"
           >
             <Plus
               size={14}
@@ -98,7 +98,7 @@ export default function EmployeeManagement() {
         </div>
 
         {/* Lọc + tìm */}
-        <div className="px-5 py-2.5 border-b border-[#E4E6E9] flex items-center gap-1.5">
+        <div className="px-5 py-2.5 border-b border-line flex items-center gap-1.5">
           {STATUS_CHIPS.map((chip) => (
             <button
               key={chip.value}
@@ -107,7 +107,7 @@ export default function EmployeeManagement() {
                 ${
                   status === chip.value
                     ? "bg-[#14181D] text-white border-[#14181D]"
-                    : "bg-white text-[#5C6672] border-[#E4E6E9] hover:border-[#CDD2D8]"
+                    : "bg-white text-ink-secondary border-line hover:border-line-input"
                 }`}
             >
               {chip.label}
@@ -115,24 +115,24 @@ export default function EmployeeManagement() {
           ))}
 
           <div className="ml-auto flex items-center gap-1.5">
-            <div className="flex items-center gap-2 h-7 px-2.5 border border-[#E4E6E9] rounded-md w-[240px] focus-within:border-[#1B3A5C]">
+            <div className="flex items-center gap-2 h-7 px-2.5 border border-line rounded-md w-[240px] focus-within:border-navy-700">
               <Search
                 size={13}
                 strokeWidth={1.75}
-                className="text-[#98A1AC] shrink-0"
+                className="text-ink-muted shrink-0"
               />
               <input
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Tên, email, điện thoại"
-                className="text-[12px] outline-none w-full bg-transparent text-[#14181D]"
+                className="text-[12px] outline-none w-full bg-transparent text-ink"
               />
             </div>
             {filters.search && (
               <button
                 onClick={clearSearch}
                 aria-label="Bỏ tìm kiếm"
-                className="h-7 w-7 flex items-center justify-center border border-[#E4E6E9] rounded-md text-[#98A1AC] hover:text-[#14181D] hover:bg-[#F5F6F7]"
+                className="h-7 w-7 flex items-center justify-center border border-line rounded-md text-ink-muted hover:text-ink hover:bg-row-hover"
               >
                 <X
                   size={13}
@@ -148,7 +148,7 @@ export default function EmployeeManagement() {
           <SkeletonRows />
         ) : groups.length === 0 ? (
           <div className="py-16 text-center">
-            <p className="text-[13px] text-[#5C6672] mb-3">
+            <p className="text-[13px] text-ink-secondary mb-3">
               {filters.search
                 ? "Không có nhân viên nào khớp từ khoá."
                 : status === "locked"
@@ -158,14 +158,14 @@ export default function EmployeeManagement() {
             {filters.search ? (
               <button
                 onClick={clearSearch}
-                className="h-8 px-4 rounded-md border border-[#E4E6E9] text-[12px] text-[#14181D] hover:bg-[#F5F6F7]"
+                className="h-8 px-4 rounded-md border border-line text-[12px] text-ink hover:bg-row-hover"
               >
                 Bỏ tìm kiếm
               </button>
             ) : status === "all" ? (
               <button
                 onClick={openCreate}
-                className="h-8 px-4 rounded-md border border-[#E4E6E9] text-[12px] text-[#14181D] hover:bg-[#F5F6F7]"
+                className="h-8 px-4 rounded-md border border-line text-[12px] text-ink hover:bg-row-hover"
               >
                 Thêm nhân viên
               </button>
@@ -176,7 +176,7 @@ export default function EmployeeManagement() {
             className={`transition-opacity duration-150 ${loading ? "opacity-40 pointer-events-none" : ""}`}
           >
             <div
-              className="grid items-center gap-3 h-[36px] px-4 bg-[#FAFBFB] border-b border-[#E4E6E9] text-[12px] text-[#98A1AC]"
+              className="grid items-center gap-3 h-[36px] px-4 bg-[#FAFBFB] border-b border-line text-[12px] text-ink-muted"
               style={{ gridTemplateColumns: EMPLOYEE_GRID }}
             >
               <span>Nhân viên</span>
@@ -224,12 +224,10 @@ function GroupSection({
 
   return (
     <div className={isLast ? "[&>div:last-child]:border-b-0" : ""}>
-      <div className="flex items-center gap-2.5 px-4 py-2 bg-[#FAFBFB] border-b border-[#E4E6E9]">
-        <b className="text-[12px] font-semibold text-[#14181D]">
-          {ROLE_LABELS[role]}
-        </b>
+      <div className="flex items-center gap-2.5 px-4 py-2 bg-[#FAFBFB] border-b border-line">
+        <b className="text-[12px] font-semibold text-ink">{ROLE_LABELS[role]}</b>
         <div className="flex-1 h-px bg-[#E4E6E9]" />
-        <span className="text-[11px] text-[#98A1AC] tabular-nums">
+        <span className="text-[11px] text-ink-muted tabular-nums">
           {list.length} người
           {active < list.length ? `, ${list.length - active} đã khoá` : ""}
         </span>
@@ -251,7 +249,7 @@ function SkeletonRows() {
       {Array.from({ length: 5 }).map((_, i) => (
         <div
           key={i}
-          className="grid items-center gap-3 min-h-[56px] px-4 border-b border-[#F0F1F3] last:border-b-0"
+          className="grid items-center gap-3 min-h-[56px] px-4 border-b border-line-soft last:border-b-0"
           style={{ gridTemplateColumns: EMPLOYEE_GRID }}
         >
           <div className="flex items-center gap-2.5">

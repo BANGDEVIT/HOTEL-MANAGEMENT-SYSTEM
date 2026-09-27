@@ -118,12 +118,12 @@ function DialogBody({ roomId, onClose }: { roomId: string; onClose: () => void }
       onClick={(e) => e.target === e.currentTarget && !busy && onClose()}
     >
       <div className="bg-white rounded-[10px] w-[640px] max-w-full max-h-[86vh] flex flex-col shadow-[0_8px_24px_rgba(20,24,29,.12)]">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#E4E6E9] shrink-0">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-line shrink-0">
           <div>
-            <h2 className="text-[14px] font-semibold text-[#14181D]">
+            <h2 className="text-[14px] font-semibold text-ink">
               Ảnh phòng {room.room_number}
             </h2>
-            <p className="text-[12px] text-[#98A1AC] mt-0.5 tabular-nums">
+            <p className="text-[12px] text-ink-muted mt-0.5 tabular-nums">
               {images.length} trên {MAX_IMAGES} ảnh. Kéo để sắp xếp, ảnh đầu tiên là
               ảnh bìa.
             </p>
@@ -131,7 +131,7 @@ function DialogBody({ roomId, onClose }: { roomId: string; onClose: () => void }
           <button
             onClick={onClose}
             disabled={busy}
-            className="w-7 h-7 flex items-center justify-center rounded text-[#98A1AC] hover:bg-[#F5F6F7] disabled:opacity-40"
+            className="w-7 h-7 flex items-center justify-center rounded text-ink-muted hover:bg-row-hover disabled:opacity-40"
           >
             <X
               size={15}
@@ -158,7 +158,7 @@ function DialogBody({ roomId, onClose }: { roomId: string; onClose: () => void }
         >
           {busy && (
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#E4E6E9] overflow-hidden z-10">
-              <div className="h-full w-1/3 bg-[#1B3A5C] rounded-full animate-[slide_1s_ease-in-out_infinite]" />
+              <div className="h-full w-1/3 bg-navy-700 rounded-full animate-[slide_1s_ease-in-out_infinite]" />
             </div>
           )}
 
@@ -167,17 +167,17 @@ function DialogBody({ roomId, onClose }: { roomId: string; onClose: () => void }
               onClick={() => inputRef.current?.click()}
               disabled={busy}
               className={`w-full h-[220px] rounded-lg border border-dashed flex flex-col items-center justify-center gap-2 transition-colors
-                ${fileOver ? "border-[#1B3A5C] bg-[#F5F6F7]" : "border-[#CDD2D8] hover:bg-[#FAFBFB]"}`}
+                ${fileOver ? "border-navy-700 bg-table-head" : "border-line-input hover:bg-[#FAFBFB]"}`}
             >
               <ImagePlus
                 size={20}
                 strokeWidth={1.75}
-                className="text-[#98A1AC]"
+                className="text-ink-muted"
               />
-              <span className="text-[13px] text-[#14181D]">
+              <span className="text-[13px] text-ink">
                 {uploading ? "Đang tải ảnh lên" : "Kéo ảnh vào đây hoặc chọn từ máy"}
               </span>
-              <span className="text-[11px] text-[#98A1AC]">
+              <span className="text-[11px] text-ink-muted">
                 jpeg, png, webp, mỗi ảnh dưới 5MB
               </span>
             </button>
@@ -204,7 +204,7 @@ function DialogBody({ roomId, onClose }: { roomId: string; onClose: () => void }
                     setDragIndex(null);
                     setOverIndex(null);
                   }}
-                  className={`group relative aspect-[4/3] rounded-lg overflow-hidden bg-[#F5F6F7] cursor-grab active:cursor-grabbing
+                  className={`group relative aspect-[4/3] rounded-lg overflow-hidden bg-table-head cursor-grab active:cursor-grabbing
                     ${dragIndex === index ? "opacity-40" : ""}
                     ${overIndex === index && dragIndex !== index ? "ring-2 ring-[#1B3A5C]" : ""}`}
                 >
@@ -217,7 +217,7 @@ function DialogBody({ roomId, onClose }: { roomId: string; onClose: () => void }
                   />
 
                   {index === 0 && (
-                    <span className="absolute top-1.5 left-1.5 h-5 px-1.5 flex items-center rounded bg-white/90 text-[10px] font-medium text-[#14181D]">
+                    <span className="absolute top-1.5 left-1.5 h-5 px-1.5 flex items-center rounded bg-white/90 text-[10px] font-medium text-ink">
                       Ảnh bìa
                     </span>
                   )}
@@ -230,13 +230,13 @@ function DialogBody({ roomId, onClose }: { roomId: string; onClose: () => void }
                       <div className="flex gap-1.5">
                         <button
                           onClick={() => remove(url)}
-                          className="h-7 px-3 rounded-md bg-[#B4321F] text-white text-[11px] font-medium"
+                          className="h-7 px-3 rounded-md bg-destructive text-white text-[11px] font-medium"
                         >
                           Xoá
                         </button>
                         <button
                           onClick={() => setConfirmUrl(null)}
-                          className="h-7 px-3 rounded-md bg-white text-[11px] text-[#14181D]"
+                          className="h-7 px-3 rounded-md bg-white text-[11px] text-ink"
                         >
                           Huỷ
                         </button>
@@ -248,7 +248,7 @@ function DialogBody({ roomId, onClose }: { roomId: string; onClose: () => void }
                         <button
                           onClick={() => makeCover(index)}
                           title="Đặt làm ảnh bìa"
-                          className="w-7 h-7 flex items-center justify-center rounded-md bg-white/90 text-[#14181D] hover:bg-white"
+                          className="w-7 h-7 flex items-center justify-center rounded-md bg-white/90 text-ink hover:bg-white"
                         >
                           <Star
                             size={13}
@@ -274,14 +274,14 @@ function DialogBody({ roomId, onClose }: { roomId: string; onClose: () => void }
               {remaining > 0 && (
                 <button
                   onClick={() => inputRef.current?.click()}
-                  className="aspect-[4/3] rounded-lg border border-dashed border-[#CDD2D8] flex flex-col items-center justify-center gap-1.5 hover:bg-[#FAFBFB]"
+                  className="aspect-[4/3] rounded-lg border border-dashed border-line-input flex flex-col items-center justify-center gap-1.5 hover:bg-[#FAFBFB]"
                 >
                   <ImagePlus
                     size={18}
                     strokeWidth={1.75}
-                    className="text-[#98A1AC]"
+                    className="text-ink-muted"
                   />
-                  <span className="text-[12px] text-[#5C6672]">
+                  <span className="text-[12px] text-ink-secondary">
                     {uploading ? "Đang tải lên" : "Thêm ảnh"}
                   </span>
                 </button>
