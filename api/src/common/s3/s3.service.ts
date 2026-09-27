@@ -13,6 +13,7 @@ export class S3Service {
     'image/jpeg',
     'image/png',
     'image/webp',
+    'image/jpg',
   ];
   private readonly MAX_FILE_SIZE = 5 * 1024 * 1024;
 
@@ -75,9 +76,10 @@ export class S3Service {
     files: Express.Multer.File[],
     folder: string,
   ): Promise<string[]> {
-    if (files?.length) return;
-    // Kiểm tra toàn bộ trước khi upload — tránh trường hợp
-    // upload được 2 file rồi file thứ 3 sai định dạng, để lại rác trên S3
+    if (!files?.length) return [];
+
+    // 1. Kiểm tra TOÀN BỘ trước khi upload: tránh upload được 2 file
+    //    rồi file thứ 3 sai định dạng, để lại rác trên S3
     for (const file of files) {
       if (!this.ALLOWED_MIME_TYPES.includes(file.mimetype)) {
         throw new BadRequestException(
@@ -87,19 +89,18 @@ export class S3Service {
       if (file.size > this.MAX_FILE_SIZE) {
         throw new BadRequestException(`File ${file.originalname} vượt quá 5MB`);
       }
+    } // ← vòng kiểm tra đóng ở đây
 
-      const upLoaded: string[] = [];
-
-      try {
-        for (const file of files) {
-          const url = await this.uploadFile(file, folder);
-          upLoaded.push(url);
-        }
-        return upLoaded;
-      } catch (error) {
-        await Promise.allSettled(upLoaded.map((url) => this.deleteFile(url)));
-        throw error;
+    // 2. Upload lần lượt. Hỏng giữa chừng thì xoá những file đã lên
+    const uploaded: string[] = [];
+    try {
+      for (const file of files) {
+        uploaded.push(await this.uploadFile(file, folder));
       }
+      return uploaded;
+    } catch (error) {
+      await Promise.allSettled(uploaded.map((url) => this.deleteFile(url)));
+      throw error;
     }
   }
 
