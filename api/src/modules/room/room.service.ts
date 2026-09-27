@@ -19,7 +19,7 @@ import { S3Service } from '../../common/s3/s3.service';
 import { QueryAvailableRoomDto } from './dto/query-available-room.dto';
 import { RedisService } from '../../common/redis/redis.service';
 import { UpdateRoomImagesDto } from './dto/update-room-images.dto';
-import { RoomStatsDto } from './dto/room-stats.dto';
+import { FloorStatsDto, RoomStatsDto } from './dto/room-stats.dto';
 
 @Injectable()
 export class RoomService {
@@ -335,9 +335,9 @@ export class RoomService {
    * Không nhận filter nào -> lọc danh sách thế nào con số cũng không đổi.
    */
   async getStats(): Promise<RoomStatsDto> {
-    // SELECT status, COUNT(*) FROM "Room" GROUP BY status
+    // SELECT status, COUNT(*) FROM "Room" GROUP BY status, floor
     const grouped = await this.prisma.room.groupBy({
-      by: ['status'],
+      by: ['floor', 'status'],
       _count: { _all: true },
     });
 
@@ -350,9 +350,29 @@ export class RoomService {
       maintenance: 0,
       inactive: 0,
     };
-
+    const floors = new Map<number, FloorStatsDto>();
     for (const g of grouped) {
-      stats[g.status] = g._count._all;
+      const n = g._count._all;
+      stats[g.status] += n;
+
+      // Phòng đã ẩn không kinh doanh -> không hiện trên thanh tầng
+      if (g.status === 'inactive') continue;
+      let f = floors.get(g.floor);
+      if (!f) {
+        f = {
+          floor: g.floor,
+          total: 0,
+          available: 0,
+          occupied: 0,
+          cleaning: 0,
+          maintenance: 0,
+        };
+        floors.set(g.floor, f);
+      }
+      // Sau lệnh continue ở trên, TypeScript biết g.status KHÔNG còn là 'inactive'
+      // -> f[g.status] hợp lệ, vì FloorStatsDto có đủ 4 key còn lại
+      f[g.status] += n;
+      f.total += n;
     }
 
     return {
@@ -360,6 +380,7 @@ export class RoomService {
       // Phòng đã ẩn không tính vào tổng phòng đang kinh doanh
       total:
         stats.available + stats.occupied + stats.cleaning + stats.maintenance,
+      floors: [...floors.values()].sort((a, b) => a.floor - b.floor),
     };
   }
   async remove(id: string): Promise<void> {
