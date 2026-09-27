@@ -279,48 +279,57 @@ export class EmployeeService {
 
     return this.transformEmployee(employee);
   }
-
   async updateProfile(
     accountId: string,
-    updateProfile: UpdateProfileDto,
+    dto: UpdateProfileDto,
     file?: Express.Multer.File,
   ): Promise<EmployeeProfileResponseDto> {
     const employee = await this.prisma.employee.findUnique({
       where: { account_id: accountId },
+      select: { id: true, avatar_url: true },
     });
-
     if (!employee) {
-      throw new NotFoundException('Nhân viên không tồn tại');
+      throw new NotFoundException('Không tìm thấy nhân viên');
     }
 
-    let avatarUrl: string | undefined;
+    const { first_name, last_name, phone, gender } = dto;
 
+    // Bước 1: upload ảnh mới TRƯỚC. Ảnh cũ vẫn còn nguyên.
+    let newAvatarUrl: string | undefined;
     if (file) {
       try {
-        avatarUrl = await this.s3Service.uploadFile(file, 'avatars');
-        if (employee.avatar_url) {
-          await this.s3Service.deleteFile(employee.avatar_url).catch(() => {});
-        }
+        newAvatarUrl = await this.s3Service.uploadFile(file, 'avatars');
       } catch {
         throw new InternalServerErrorException('Tải ảnh lên thất bại');
       }
-    } else if (updateProfile.avatar_url) {
-      avatarUrl = updateProfile.avatar_url;
     }
 
-    const { first_name, last_name, phone, gender } = updateProfile;
+    // Bước 2: lưu DB
+    let updated;
+    try {
+      updated = await this.prisma.employee.update({
+        where: { id: employee.id },
+        data: {
+          ...(first_name && { first_name }),
+          ...(last_name && { last_name }),
+          ...(phone && { phone }),
+          ...(gender && { gender }),
+          ...(newAvatarUrl && { avatar_url: newAvatarUrl }),
+        },
+        select: this.employeeSelect(),
+      });
+    } catch (err) {
+      // DB lỗi -> xoá ảnh vừa upload, không để file rác trên S3
+      if (newAvatarUrl)
+        await this.s3Service.deleteFile(newAvatarUrl).catch(() => {});
+      throw err;
+    }
 
-    const updated = await this.prisma.employee.update({
-      where: { account_id: accountId },
-      data: {
-        ...(first_name && { first_name }),
-        ...(last_name && { last_name }),
-        ...(phone && { phone }),
-        ...(gender && { gender }),
-        ...(avatarUrl && { avatar_url: avatarUrl }),
-      },
-      select: this.employeeSelect(),
-    });
+    // Bước 3: DB đã trỏ sang ảnh mới rồi mới xoá ảnh cũ.
+    // Xoá lỗi cũng bỏ qua: người dùng đã đổi ảnh thành công, chỉ còn 1 file thừa trên S3.
+    if (newAvatarUrl && employee.avatar_url) {
+      await this.s3Service.deleteFile(employee.avatar_url).catch(() => {});
+    }
 
     return this.transformEmployee(updated);
   }
@@ -329,35 +338,35 @@ export class EmployeeService {
     accountId: string,
     dto: UpdatePasswordDto,
   ): Promise<void> {
-    const { email, password, newPassword } = dto;
+    const { curent_password, new_password } = dto;
 
-    const account = await this.prisma.account.findUnique({
-      where: { id: accountId },
-      select: { email: true, hash_password: true },
-    });
-
-    if (!account) {
-      throw new NotFoundException('Tài khoản không tồn tại');
-    }
-
-    if (account.email !== email) {
-      throw new BadRequestException('Email hoặc mật khẩu không đúng');
-    }
-
-    const isMatch = await bcrypt.compare(password, account.hash_password);
-    if (!isMatch) {
-      throw new BadRequestException('Email hoặc mật khẩu không đúng');
-    }
-
-    if (password === newPassword) {
+    if (curent_password === new_password) {
       throw new BadRequestException('Mật khẩu mới phải khác mật khẩu hiện tại');
     }
 
-    const newHashedPassword = await bcrypt.hash(newPassword, 10);
+    const account = await this.prisma.account.findUnique({
+      where: { id: accountId },
+      select: { id: true, hash_password: true },
+    });
+
+    if (!account) {
+      throw new NotFoundException('Không tìm thấy tài khoản');
+    }
+
+    const matched = await bcrypt.compare(
+      curent_password,
+      account.hash_password,
+    );
+
+    if (!matched) {
+      throw new BadRequestException('Mật khẩu hiện tại không đúng');
+    }
+
+    const hashPassword = await bcrypt(new_password, 10);
 
     await this.prisma.account.update({
-      where: { id: accountId },
-      data: { hash_password: newHashedPassword },
+      where: { id: account.id },
+      data: { hash_password: hashPassword },
     });
   }
 

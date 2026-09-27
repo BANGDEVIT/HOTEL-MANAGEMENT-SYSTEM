@@ -45,6 +45,12 @@ const OPERATION_ITEMS: NavItem[] = [
 
 const DAILY_ITEMS: NavItem[] = [
   {
+    label: "Lịch của tôi",
+    path: "/admin/my-shifts",
+    icon: "📋",
+    roles: ["admin", "manager", "staff"],
+  },
+  {
     label: "Phòng",
     path: "/admin/rooms",
     icon: "🚪",
@@ -165,7 +171,7 @@ export default function AdminLayout({ children }: Props) {
           </p>
           <SidebarLink
             label="Hồ sơ"
-            path="/profile"
+            path="/admin/profile"
             icon="👤"
             roles={[]}
           />

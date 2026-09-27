@@ -62,6 +62,15 @@ export interface EmployeeOption {
   role: string; // role chính: admin / manager / staff
 }
 
+export interface NextShift {
+  id: string;
+  work_date: string;
+  starts_at: string;
+  ends_at: string;
+  status: "ongoing" | "upcoming";
+  shift: Shift;
+}
+
 export const SHIFT_LABELS: Record<ShiftName, string> = {
   morning: "Ca sáng",
   afternoon: "Ca chiều",

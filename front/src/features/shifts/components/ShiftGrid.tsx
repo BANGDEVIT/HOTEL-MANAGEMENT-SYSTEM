@@ -9,7 +9,7 @@ import ShiftSlot from "./ShiftSlot";
 const GRID = "148px repeat(7, minmax(124px, 1fr))";
 
 // Tạo 1 lần ngoài component: ô trống luôn nhận CÙNG 1 mảng,
-// thay vì mỗi lần render tạo [] mới
+// không phải mỗi lần render lại tạo một [] mới
 const EMPTY: ScheduleItem[] = [];
 
 interface Props {
@@ -17,8 +17,13 @@ interface Props {
   days: string[];
   cells: Map<string, ScheduleItem[]>;
   today: string;
-  onAdd: (shift: Shift, day: string) => void;
-  onRemove: (item: ScheduleItem) => Promise<void>;
+  /** true = trang nhân viên: không thêm, không gỡ, không cảnh báo thiếu người */
+  readOnly?: boolean;
+  /** id nhân viên đang đăng nhập -> ô của người đó được viền vàng */
+  highlightId?: string;
+  /** Trang quản lý truyền. Trang nhân viên không truyền. */
+  onAdd?: (shift: Shift, day: string) => void;
+  onRemove?: (item: ScheduleItem) => Promise<void>;
 }
 
 export default function ShiftGrid({
@@ -26,13 +31,15 @@ export default function ShiftGrid({
   days,
   cells,
   today,
+  readOnly = false,
+  highlightId,
   onAdd,
   onRemove,
 }: Props) {
   if (shifts.length === 0) {
     return (
       <div className="py-16 text-center text-[13px] text-[#98A1AC]">
-        Chưa có ca nào trong danh mục. Chạy seed hoặc tạo ca bằng API.
+        Chưa có ca nào trong danh mục
       </div>
     );
   }
@@ -74,10 +81,13 @@ export default function ShiftGrid({
 
         {/* ===== Mỗi ca: 1 ô nhãn + 7 ô ngày = 8 ô ===== */}
         {shifts.map((shift) => (
-          // Fragment có key: gom 8 ô của 1 ca mà không sinh thêm thẻ div,
-          // vì thêm div sẽ phá grid (div đó thành 1 ô)
+          // Fragment có key: gom 8 ô của 1 ca mà không sinh thêm thẻ div.
+          // Thêm div thì div đó bị tính là 1 ô và phá vỡ grid.
           <Fragment key={shift.id}>
-            <ShiftRowLabel shift={shift} />
+            <ShiftRowLabel
+              shift={shift}
+              showRequired={!readOnly}
+            />
             {days.map((day) => (
               <ShiftSlot
                 key={day}
@@ -85,7 +95,9 @@ export default function ShiftGrid({
                 day={day}
                 items={cells.get(cellKey(shift.id, day)) ?? EMPTY}
                 isToday={day === today}
-                locked={day < today}
+                // readOnly -> mọi ngày đều khoá: ẩn nút Thêm, ẩn ×, ẩn cảnh báo thiếu
+                locked={readOnly || day < today}
+                highlightId={highlightId}
                 onAdd={onAdd}
                 onRemove={onRemove}
               />
@@ -97,8 +109,14 @@ export default function ShiftGrid({
   );
 }
 
-/** Nhỏ và chỉ dùng ở đây -> để chung file, không tách riêng */
-function ShiftRowLabel({ shift }: { shift: Shift }) {
+/** Nhỏ và chỉ dùng trong file này -> để chung, không tách file riêng */
+function ShiftRowLabel({
+  shift,
+  showRequired,
+}: {
+  shift: Shift;
+  showRequired: boolean;
+}) {
   return (
     <div className="flex gap-2.5 px-3 py-2.5 border-b border-[#F0F1F3]">
       <span
@@ -113,9 +131,12 @@ function ShiftRowLabel({ shift }: { shift: Shift }) {
           {shift.start_time} – {shift.end_time}
           {shift.is_overnight && " hôm sau"}
         </div>
-        <div className="text-[11px] text-[#98A1AC] mt-1">
-          Cần {SHIFT_REQUIRED[shift.name]} người
-        </div>
+        {/* "Cần N người" là thông tin cho quản lý, nhân viên không cần xem */}
+        {showRequired && (
+          <div className="text-[11px] text-[#98A1AC] mt-1">
+            Cần {SHIFT_REQUIRED[shift.name]} người
+          </div>
+        )}
       </div>
     </div>
   );

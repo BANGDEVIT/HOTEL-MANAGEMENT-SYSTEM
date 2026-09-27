@@ -39,23 +39,28 @@ interface Props {
   item: ScheduleItem;
   /** Không truyền = ngày đã qua, không cho gỡ */
   onRemove?: (item: ScheduleItem) => Promise<void>;
+  highlight?: boolean; // ô của chính người đang đăng nhập
 }
 
-export default function EmployeeChip({ item, onRemove }: Props) {
+export default function EmployeeChip({ item, onRemove, highlight = false }: Props) {
   const { employee } = item;
 
   return (
     <div
       title={`${employee.full_name}, ${employee.position}`}
-      // group/chip: đặt tên nhóm để nút × chỉ hiện khi hover CHIP này,
-      // không bị ảnh hưởng bởi group của ô cha (ShiftSlot)
-      className="group/chip flex items-center gap-1.5 h-7 pl-[3px] pr-1 mb-1 rounded-[5px] border border-[#E4E6E9] bg-white hover:border-[#CDD2D8]"
+      className={`group/chip flex items-center gap-1.5 h-7 pl-[3px] pr-1 mb-1 rounded-[5px] border ${
+        highlight
+          ? "border-[#C9A84C] bg-[#FFF9EC]"
+          : "border-[#E4E6E9] bg-white hover:border-[#CDD2D8]"
+      }`}
     >
       <EmployeeAvatar
         name={employee.full_name}
         url={employee.avatar_url}
       />
-      <span className="flex-1 min-w-0 truncate text-[11.5px] text-[#14181D]">
+      <span
+        className={`flex-1 min-w-0 truncate text-[11.5px] text-[#14181D] ${highlight ? "font-medium" : ""}`}
+      >
         {employee.full_name}
       </span>
 

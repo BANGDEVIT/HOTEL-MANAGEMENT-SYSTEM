@@ -10,6 +10,7 @@ import {
   Query,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
 import { EmployeeService } from './employee.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
@@ -132,7 +133,10 @@ export class EmployeeController {
         if (file.mimetype.match(/\/(jpeg|png|webp)$/)) {
           cb(null, true);
         } else {
-          cb(new Error('Chỉ chấp nhận file JPEG, PNG, WEBP'), false);
+          cb(
+            new BadRequestException('Chỉ chấp nhận ảnh JPEG, PNG hoặc WEBP'),
+            false,
+          );
         }
       },
     }),
@@ -216,7 +220,7 @@ export class EmployeeController {
     @Body() updatePasswordDto: UpdatePasswordDto,
   ): Promise<{ message: string }> {
     await this.employeeService.updatePassword(accountId, updatePasswordDto);
-    return { message: 'Change Password successfully' };
+    return { message: 'Đổi mật khẩu thành công' };
   }
 
   @Get(':id')

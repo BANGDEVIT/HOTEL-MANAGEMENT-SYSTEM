@@ -9,6 +9,9 @@ import RoomManagement from "./features/rooms/RoomManagement";
 import RoomTypeManagement from "./features/roomTypes/RoomTypeManagement";
 import EmployeeManagement from "./features/employees/EmployeeManagement";
 import ShiftManagement from "./features/shifts/ShiftManagement";
+import MyShifts from "./features/shifts/components/MyShifts";
+import Unauthorized from "./pages/Unauthorized";
+import ProfilePage from "./features/profile/ProfilePage";
 
 export default function App() {
   const { bootstrap, isInitializing } = useAuthStore();
@@ -96,20 +99,30 @@ export default function App() {
         />
 
         <Route
-          path="/unauthorized"
+          path="/admin/my-shifts"
           element={
-            <div className="flex flex-col items-center justify-center h-screen gap-3">
-              <p className="text-[15px] text-[#14181D]">
-                Tài khoản của bạn không có quyền xem trang này.
-              </p>
-              <a
-                href="/admin/dashboard"
-                className="h-8 px-4 flex items-center rounded-md bg-[#1B3A5C] text-white text-[13px]"
-              >
-                Về trang phòng
-              </a>
-            </div>
+            <ProtectedRoute allowedRoles={["admin", "manager", "staff"]}>
+              <AdminLayout>
+                <MyShifts />
+              </AdminLayout>
+            </ProtectedRoute>
           }
+        />
+
+        <Route
+          path="/admin/profile"
+          element={
+            <ProtectedRoute allowedRoles={["admin", "manager", "staff"]}>
+              <AdminLayout>
+                <ProfilePage />
+              </AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/unauthorized"
+          element={<Unauthorized />}
         />
       </Routes>
     </BrowserRouter>
