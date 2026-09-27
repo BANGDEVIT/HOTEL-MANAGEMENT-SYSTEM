@@ -1,8 +1,8 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { ChevronUp } from "lucide-react";
 import type { Room } from "../../../types/room";
-import { groupByFloor } from "../utils/GroupByFloor";
 import RoomCard from "./RoomCard";
+import { groupByFloor } from "../utils/groupByFloor";
 
 interface Props {
   rooms: Room[]; // đã lọc sẵn theo tầng ở trang cha

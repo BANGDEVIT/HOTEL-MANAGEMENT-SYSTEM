@@ -39,7 +39,7 @@ function DialogBody({ roomId, onClose }: { roomId: string; onClose: () => void }
 
   if (!room) return null;
 
-  const images = room.images ?? [];
+  const images: string[] = Array.isArray(room.images) ? room.images : [];
   const remaining = MAX_IMAGES - images.length;
   const busy = uploading || saving;
 

@@ -248,7 +248,7 @@ function UserCard() {
   return (
     <div className="mt-auto flex items-center gap-1.5 rounded-[12px] bg-white/[0.06] p-2">
       <NavLink
-        to="/profile"
+        to="/admin/profile"
         title="Hồ sơ của tôi"
         className={({ isActive }) =>
           `flex items-center gap-2.5 min-w-0 flex-1 rounded-[9px] p-1 transition-colors hover:bg-white/[0.06] ${

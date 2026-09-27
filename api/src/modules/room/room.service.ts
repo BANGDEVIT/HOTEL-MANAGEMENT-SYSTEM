@@ -2,8 +2,10 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma, RoomStatus } from '@prisma/client';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -12,7 +14,6 @@ import {
   RoomResponseDto,
 } from './dto/room-response.dto';
 import { QueryRoomDto } from './dto/query-room.dto';
-import { Prisma, RoomStatus } from '@prisma/client';
 import { Amenity } from '../room-type/dto/create-room-type.dto';
 import { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import { S3Service } from '../../common/s3/s3.service';
@@ -21,78 +22,96 @@ import { RedisService } from '../../common/redis/redis.service';
 import { UpdateRoomImagesDto } from './dto/update-room-images.dto';
 import { FloorStatsDto, RoomStatsDto } from './dto/room-stats.dto';
 
+/**
+ * Các field trả về cho FE. Khai báo 1 lần, dùng chung cho mọi query.
+ * `satisfies` giữ nguyên kiểu literal (true) -> Prisma suy ra đúng kiểu kết quả.
+ */
+const ROOM_SELECT = {
+  id: true,
+  room_number: true,
+  floor: true,
+  status: true,
+  created_at: true,
+  updated_at: true,
+  images: true,
+  room_type: {
+    select: {
+      id: true,
+      name: true,
+      base_price: true,
+      capacity: true,
+      bed_type: true,
+      amenities: true,
+    },
+  },
+} satisfies Prisma.RoomSelect;
+
+type RoomRow = Prisma.RoomGetPayload<{ select: typeof ROOM_SELECT }>;
+
+/**
+ * Chuyển trạng thái hợp lệ:
+ *   available   → cleaning, maintenance
+ *   cleaning    → available
+ *   maintenance → available
+ *   occupied    → cleaning      (sau check-out)
+ *   available   → occupied  ❌  (hệ thống tự đổi khi check-in)
+ *   occupied    → available ❌  (phải qua dọn phòng trước)
+ *   inactive    → bất kỳ    ❌  (đã ẩn)
+ */
+const VALID_TRANSITIONS: Record<RoomStatus, RoomStatus[]> = {
+  available: ['cleaning', 'maintenance'],
+  cleaning: ['available'],
+  maintenance: ['available'],
+  occupied: ['cleaning'],
+  inactive: [],
+};
+
+const STATUS_LABEL: Record<RoomStatus, string> = {
+  available: 'Trống',
+  occupied: 'Có khách',
+  cleaning: 'Đang dọn',
+  maintenance: 'Bảo trì',
+  inactive: 'Đã ẩn',
+};
+
+const HOTEL_TZ = 'Asia/Ho_Chi_Minh';
+/** "2026-09-27" theo giờ khách sạn, không theo giờ server */
+const todayYmd = () =>
+  new Date().toLocaleDateString('sv-SE', { timeZone: HOTEL_TZ });
+
 @Injectable()
 export class RoomService {
+  private readonly logger = new Logger(RoomService.name);
+  private readonly MAX_IMAGES_PER_ROOM = 10;
+
   constructor(
     private prisma: PrismaService,
     private s3Service: S3Service,
     private redis: RedisService,
   ) {}
 
-  private readonly MAX_IMAGES_PER_ROOM = 10;
+  /* ============================ TẠO / ĐỌC ============================ */
+
   async create(createRoomDto: CreateRoomDto): Promise<RoomResponseDto> {
     const { room_number, room_type_id, floor } = createRoomDto;
 
-    // 1. Check room_type tồn tại và active
-    const existingRoomType = await this.prisma.roomType.findUnique({
-      where: { id: room_type_id },
-    });
+    await this.validateRoomType(room_type_id);
 
-    if (!existingRoomType) {
-      throw new NotFoundException('Room Type not found');
-    }
-
-    if (!existingRoomType.is_active) {
-      throw new BadRequestException('Room type was deleted');
-    }
-
-    // 2. Check room_number trùng
     const existingRoom = await this.prisma.room.findUnique({
       where: { room_number },
+      select: { id: true },
     });
-
     if (existingRoom) {
-      throw new ConflictException(`Number ${room_number} has already existed`);
+      throw new ConflictException(`Số phòng ${room_number} đã tồn tại`);
     }
 
-    // 3. Tạo phòng
     const newRoom = await this.prisma.room.create({
-      data: {
-        room_type_id,
-        room_number,
-        floor,
-        images: [],
-      },
-      select: {
-        id: true,
-        room_number: true,
-        floor: true,
-        status: true,
-        created_at: true,
-        updated_at: true,
-        images: true,
-        room_type: {
-          select: {
-            id: true,
-            name: true,
-            base_price: true,
-            capacity: true,
-            bed_type: true,
-            amenities: true,
-          },
-        },
-      },
+      data: { room_type_id, room_number, floor, images: [] },
+      select: ROOM_SELECT,
     });
 
-    return {
-      ...newRoom,
-      images: (newRoom.images as string[]) ?? [],
-      room_type: {
-        ...newRoom.room_type,
-        base_price: Number(newRoom.room_type.base_price),
-        amenities: newRoom.room_type.amenities as Amenity[],
-      },
-    };
+    await this.clearRoomCache();
+    return this.transformRoom(newRoom);
   }
 
   async findAll(query: QueryRoomDto): Promise<PaginatedRoomResponseDto> {
@@ -106,38 +125,19 @@ export class RoomService {
       order = 'asc',
       search,
     } = query;
-    const skip = (page - 1) * limit;
-    const where: Prisma.RoomWhereInput = {
-      status: { not: 'inactive' },
-    };
 
-    if (status) {
-      where.status = status;
-    }
+    const where: Prisma.RoomWhereInput = { status: { not: 'inactive' } };
 
-    if (floor) {
-      where.floor = floor;
-    }
+    if (status) where.status = status;
+    if (floor !== undefined) where.floor = floor; // floor = 0 (tầng trệt) vẫn lọc được
 
     if (room_type_id) {
-      const existingRoomType = await this.prisma.roomType.findUnique({
-        where: { id: room_type_id },
-      });
-
-      if (!existingRoomType) {
-        throw new NotFoundException('Room Type does not exist');
-      }
-
-      if (existingRoomType.is_active === false) {
-        throw new BadRequestException('Room Type not active');
-      }
-
+      await this.validateRoomType(room_type_id);
       where.room_type_id = room_type_id;
     }
 
-    // Search theo room_number hoặc tên room_type
     if (search) {
-      where.OR = [{ room_number: { contains: search, mode: 'insensitive' } }];
+      where.room_number = { contains: search, mode: 'insensitive' };
     }
 
     const validSortFields = ['room_number', 'floor', 'status', 'created_at'];
@@ -146,31 +146,20 @@ export class RoomService {
         ? { [sortBy]: order }
         : { room_number: 'asc' };
 
-    const [roomsRaw, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.room.findMany({
         where,
         take: limit,
-        skip,
-        select: this.roomSelect(),
+        skip: (page - 1) * limit,
+        select: ROOM_SELECT,
         orderBy,
       }),
-
       this.prisma.room.count({ where }),
     ]);
 
-    const rooms = roomsRaw.map((r) => ({
-      ...r,
-      images: (r.images as string[]) ?? [],
-      room_type: {
-        ...r.room_type,
-        base_price: Number(r.room_type.base_price),
-        amenities: r.room_type.amenities as Amenity[],
-      },
-    }));
-
     return {
-      data: rooms,
-      total: total,
+      data: rows.map((r) => this.transformRoom(r)),
+      total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
@@ -180,67 +169,53 @@ export class RoomService {
   async findOne(id: string): Promise<RoomResponseDto> {
     const room = await this.prisma.room.findUnique({
       where: { id },
-      select: {
-        id: true,
-        room_number: true,
-        floor: true,
-        status: true,
-        updated_at: true,
-        created_at: true,
-        images: true,
-        room_type: {
-          select: {
-            id: true,
-            name: true,
-            base_price: true,
-            capacity: true,
-            bed_type: true,
-            amenities: true,
-            is_active: true,
-            created_at: true,
-            updated_at: true,
-          },
-        },
-      },
+      select: ROOM_SELECT,
     });
-
-    if (!room) {
-      throw new NotFoundException('Room does not exist');
-    }
+    if (!room) throw new NotFoundException('Không tìm thấy phòng');
 
     return this.transformRoom(room);
   }
 
-  // ==================== FIND AVAILABLE ====================
+  /* ============================ PHÒNG TRỐNG THEO NGÀY ============================ */
+
   async findAvailable(query: QueryAvailableRoomDto) {
-    const cacheKey = `rooms:available:${query.check_in_date}:${query.check_out_date}:${query.room_type_id ?? 'all'}:p${query.page ?? 1}`;
+    const {
+      check_in_date,
+      check_out_date,
+      room_type_id,
+      capacity,
+      page = 1,
+      limit = 10,
+    } = query;
+
+    // "YYYY-MM-DD" -> Date 00:00 UTC, khớp cách lưu cột @db.Date
+    const checkIn = new Date(check_in_date);
+    const checkOut = new Date(check_out_date);
+    const checkInYmd = checkIn.toISOString().slice(0, 10);
+
+    // Kiểm tra TRƯỚC khi vào cache: request sai thì báo lỗi luôn, không đụng Redis
+    if (checkIn >= checkOut) {
+      throw new BadRequestException('Ngày trả phòng phải sau ngày nhận phòng');
+    }
+    if (checkInYmd < todayYmd()) {
+      throw new BadRequestException('Ngày nhận phòng không được ở quá khứ');
+    }
+
+    // Key phải chứa MỌI tham số ảnh hưởng tới kết quả, thiếu 1 cái là trả nhầm kết quả của lượt tìm khác
+    const cacheKey = [
+      'rooms:available',
+      checkInYmd,
+      checkOut.toISOString().slice(0, 10),
+      room_type_id ?? 'all',
+      `c${capacity ?? 0}`,
+      `p${page}`,
+      `l${limit}`,
+    ].join(':');
 
     return this.redis.remember(cacheKey, 60, async () => {
-      const {
-        check_in_date,
-        check_out_date,
-        room_type_id,
-        capacity,
-        page = 1,
-        limit = 10,
-      } = query;
-
-      const checkIn = new Date(check_in_date);
-      const checkOut = new Date(check_out_date);
-
-      // 1. Validate ngày
-      if (checkIn >= checkOut) {
-        throw new BadRequestException('Ngày check-out phải sau ngày check-in');
-      }
-
-      if (checkIn < new Date(new Date().setHours(0, 0, 0, 0))) {
-        throw new BadRequestException(
-          'Ngày check-in không được là ngày trong quá khứ',
-        );
-      }
-
-      // 2. Tìm phòng đã được đặt trong khoảng thời gian
-      const bookedRoomIds = await this.prisma.bookingRoom.findMany({
+      // 1. Phòng đã có booking giao với khoảng ngày cần tìm
+      //    Giao nhau khi: booking.in < checkOut VÀ booking.out > checkIn
+      const booked = await this.prisma.bookingRoom.findMany({
         where: {
           booking: {
             status: { notIn: ['cancelled', 'checked_out'] },
@@ -251,98 +226,248 @@ export class RoomService {
         select: { room_id: true },
       });
 
-      const bookedIds = bookedRoomIds.map((b) => b.room_id);
-
-      // 3. Query phòng available (không nằm trong danh sách đã đặt)
-      const skip = (page - 1) * limit;
+      // 2. KHÔNG lọc status = 'available': phòng đang có khách hôm nay
+      //    vẫn có thể trống vào tuần sau. Việc trùng lịch đã được bước 1 lo.
+      //    Chỉ loại phòng đã ẩn và phòng đang bảo trì.
       const where: Prisma.RoomWhereInput = {
-        status: 'available',
-        id: { notIn: bookedIds },
+        status: { notIn: ['inactive', 'maintenance'] },
+        id: { notIn: booked.map((b) => b.room_id) },
         ...(room_type_id && { room_type_id }),
-        ...(capacity && {
-          room_type: { capacity: { gte: capacity } },
-        }),
+        ...(capacity && { room_type: { capacity: { gte: capacity } } }),
       };
 
-      const [roomsRaw, total] = await Promise.all([
+      const [rows, total] = await Promise.all([
         this.prisma.room.findMany({
           where,
-          skip,
+          skip: (page - 1) * limit,
           take: limit,
-          select: {
-            ...this.roomSelect(),
-            room_type: {
-              select: {
-                id: true,
-                name: true,
-                base_price: true,
-                capacity: true,
-                bed_type: true,
-                amenities: true,
-              },
-            },
-          },
+          select: ROOM_SELECT,
           orderBy: [{ room_type: { base_price: 'asc' } }, { floor: 'asc' }],
         }),
         this.prisma.room.count({ where }),
       ]);
 
       return {
-        data: roomsRaw.map((r) => this.transformRoom(r)),
+        data: rows.map((r) => this.transformRoom(r)),
         total,
         page,
         limit,
         totalPages: Math.ceil(total / limit),
-        // ← Thêm thông tin tìm kiếm vào response
         search_info: {
           check_in_date,
           check_out_date,
-          nights: Math.ceil(
-            (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24),
+          nights: Math.round(
+            (checkOut.getTime() - checkIn.getTime()) / 86_400_000,
           ),
         },
       };
     });
   }
-  async update(id: string, updateRoomDto: UpdateRoomDto) {
+
+  /* ============================ CẬP NHẬT ============================ */
+
+  async update(
+    id: string,
+    updateRoomDto: UpdateRoomDto,
+  ): Promise<RoomResponseDto> {
     const { room_type_id, floor } = updateRoomDto;
+
     const room = await this.prisma.room.findUnique({
       where: { id },
+      select: { status: true },
     });
-
-    if (!room) {
-      throw new NotFoundException('Room not found');
+    if (!room) throw new NotFoundException('Không tìm thấy phòng');
+    if (room.status === 'inactive') {
+      throw new BadRequestException('Phòng đã ẩn, không sửa được');
     }
 
-    if (room_type_id) {
-      await this.validateRoomType(room_type_id);
-    }
+    if (room_type_id) await this.validateRoomType(room_type_id);
 
-    const updateRoom = await this.prisma.room.update({
+    const updated = await this.prisma.room.update({
       where: { id },
       data: {
         ...(room_type_id && { room_type_id }),
-        ...(floor != undefined && { floor }),
+        ...(floor !== undefined && { floor }),
       },
-      select: this.roomSelect(),
+      select: ROOM_SELECT,
     });
 
-    return this.transformRoom(updateRoom);
+    await this.clearRoomCache();
+    return this.transformRoom(updated);
   }
+
+  async updateStatus(
+    id: string,
+    dto: UpdateRoomStatusDto,
+  ): Promise<RoomResponseDto> {
+    const { status: newStatus } = dto;
+
+    const room = await this.prisma.room.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!room) throw new NotFoundException('Không tìm thấy phòng');
+
+    if (!VALID_TRANSITIONS[room.status].includes(newStatus)) {
+      throw new BadRequestException(
+        `Không thể chuyển phòng từ "${STATUS_LABEL[room.status]}" sang "${STATUS_LABEL[newStatus]}"`,
+      );
+    }
+
+    const updated = await this.prisma.room.update({
+      where: { id },
+      data: { status: newStatus },
+      select: ROOM_SELECT,
+    });
+
+    await this.clearRoomCache();
+    return this.transformRoom(updated);
+  }
+
+  /** Ẩn phòng (xoá mềm) */
+  async remove(id: string): Promise<void> {
+    const room = await this.prisma.room.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!room) throw new NotFoundException('Không tìm thấy phòng');
+    if (room.status === 'inactive')
+      throw new BadRequestException('Phòng đã ẩn trước đó');
+    if (room.status === 'occupied') {
+      throw new BadRequestException('Không thể ẩn phòng đang có khách');
+    }
+
+    // Còn booking chưa kết thúc -> ẩn phòng thì khách đến nơi không có phòng
+    const upcoming = await this.prisma.bookingRoom.count({
+      where: {
+        room_id: id,
+        booking: {
+          status: { in: ['pending', 'confirmed', 'checked_in'] },
+          check_out_date: { gt: new Date(`${todayYmd()}T00:00:00Z`) },
+        },
+      },
+    });
+    if (upcoming > 0) {
+      throw new BadRequestException(
+        `Phòng còn ${upcoming} booking sắp tới. Chuyển khách sang phòng khác trước khi ẩn.`,
+      );
+    }
+
+    await this.prisma.room.update({
+      where: { id },
+      data: { status: 'inactive' },
+    });
+    await this.clearRoomCache();
+  }
+
+  /* ============================ ẢNH ============================ */
+
+  /** Thêm ảnh mới vào cuối danh sách hiện có */
+  async addImagesV2(
+    id: string,
+    files: Express.Multer.File[],
+  ): Promise<RoomResponseDto> {
+    if (!files?.length) throw new BadRequestException('Chưa chọn ảnh nào');
+
+    const room = await this.prisma.room.findUnique({
+      where: { id },
+      select: { images: true },
+    });
+    if (!room) throw new NotFoundException('Không tìm thấy phòng');
+
+    const current = this.toImageList(room.images);
+    if (current.length + files.length > this.MAX_IMAGES_PER_ROOM) {
+      throw new BadRequestException(
+        `Mỗi phòng tối đa ${this.MAX_IMAGES_PER_ROOM} ảnh. Hiện có ${current.length}.`,
+      );
+    }
+
+    // Thứ tự: kiểm tra -> upload -> ghi DB (lỗi thì xoá ảnh vừa upload)
+    const newUrls = await this.s3Service.uploadMultiple(files, `rooms/${id}`);
+
+    try {
+      const updated = await this.prisma.room.update({
+        where: { id },
+        data: { images: [...current, ...newUrls] }, // ngoặc VUÔNG = mảng
+        select: ROOM_SELECT,
+      });
+      await this.clearRoomCache();
+      return this.transformRoom(updated);
+    } catch (e) {
+      await this.s3Service
+        .deleteMultiple(newUrls)
+        .catch((err) =>
+          this.logger.error('Không dọn được ảnh vừa upload', err),
+        );
+      throw e;
+    }
+  }
+
+  /**
+   * Sắp xếp lại hoặc bớt ảnh: FE gửi danh sách CUỐI CÙNG.
+   * Ảnh không còn trong danh sách sẽ bị xoá khỏi S3.
+   */
+  async updateImages(
+    id: string,
+    dto: UpdateRoomImagesDto,
+  ): Promise<RoomResponseDto> {
+    const room = await this.prisma.room.findUnique({
+      where: { id },
+      select: { images: true },
+    });
+    if (!room) throw new NotFoundException('Không tìm thấy phòng');
+
+    const current = this.toImageList(room.images);
+    const next = dto.images;
+
+    // Chỉ cho sắp xếp hoặc bớt ảnh đã có, không cho gán URL lạ từ bên ngoài
+    if (next.some((url) => !current.includes(url))) {
+      throw new BadRequestException(
+        'Danh sách chứa ảnh không thuộc phòng này. Dùng chức năng thêm ảnh để tải ảnh mới.',
+      );
+    }
+    if (new Set(next).size !== next.length) {
+      throw new BadRequestException('Danh sách ảnh bị trùng');
+    }
+
+    const removed = current.filter((url) => !next.includes(url));
+
+    const updated = await this.prisma.room.update({
+      where: { id },
+      data: { images: next },
+      select: ROOM_SELECT,
+    });
+    await this.clearRoomCache();
+
+    // Xoá file SAU khi DB đã đúng. Lỗi ở bước này chỉ để lại file thừa trên S3,
+    // không làm hỏng dữ liệu -> ghi log thay vì báo lỗi cho người dùng
+    if (removed.length) {
+      await this.s3Service
+        .deleteMultiple(removed)
+        .catch((err) =>
+          this.logger.error(
+            `Không xoá được ${removed.length} ảnh trên S3`,
+            err,
+          ),
+        );
+    }
+
+    return this.transformRoom(updated);
+  }
+
+  /* ============================ THỐNG KÊ ============================ */
 
   /**
    * Đếm phòng theo trạng thái trên TOÀN khách sạn.
    * Không nhận filter nào -> lọc danh sách thế nào con số cũng không đổi.
    */
   async getStats(): Promise<RoomStatsDto> {
-    // SELECT status, COUNT(*) FROM "Room" GROUP BY status, floor
     const grouped = await this.prisma.room.groupBy({
       by: ['floor', 'status'],
       _count: { _all: true },
     });
 
-    // Khởi tạo đủ 5 trạng thái = 0: trạng thái nào không có phòng
-    // thì GROUP BY không trả về dòng đó, FE vẫn cần số 0
+    // Khởi tạo đủ trạng thái = 0: GROUP BY không trả về dòng cho trạng thái không có phòng
     const stats: Record<RoomStatus, number> = {
       available: 0,
       occupied: 0,
@@ -351,12 +476,14 @@ export class RoomService {
       inactive: 0,
     };
     const floors = new Map<number, FloorStatsDto>();
+
     for (const g of grouped) {
       const n = g._count._all;
       stats[g.status] += n;
 
-      // Phòng đã ẩn không kinh doanh -> không hiện trên thanh tầng
+      // Phòng đã ẩn không hiện trên thanh tầng
       if (g.status === 'inactive') continue;
+
       let f = floors.get(g.floor);
       if (!f) {
         f = {
@@ -369,278 +496,52 @@ export class RoomService {
         };
         floors.set(g.floor, f);
       }
-      // Sau lệnh continue ở trên, TypeScript biết g.status KHÔNG còn là 'inactive'
-      // -> f[g.status] hợp lệ, vì FloorStatsDto có đủ 4 key còn lại
       f[g.status] += n;
       f.total += n;
     }
 
     return {
       ...stats,
-      // Phòng đã ẩn không tính vào tổng phòng đang kinh doanh
       total:
         stats.available + stats.occupied + stats.cleaning + stats.maintenance,
       floors: [...floors.values()].sort((a, b) => a.floor - b.floor),
     };
   }
-  async remove(id: string): Promise<void> {
-    const room = await this.prisma.room.findUnique({
-      where: { id },
 
-      select: {
-        id: true,
-        status: true,
-      },
-    });
+  /* ============================ HELPER ============================ */
 
-    if (!room) {
-      throw new NotFoundException('Room not found');
-    }
-
-    if (room.status === 'inactive') {
-      throw new BadRequestException('Room already inactive');
-    }
-
-    if (room.status === 'occupied') {
-      throw new BadRequestException('Không thể xóa phòng đang có khách');
-    }
-
-    await this.prisma.room.update({
-      where: { id },
-
-      data: {
-        status: 'inactive',
-      },
-    });
-  }
-
-  async addImages(
-    id: string,
-    files: Express.Multer.File[],
-  ): Promise<RoomResponseDto> {
-    const room = await this.prisma.room.findUnique({ where: { id } });
-    if (!room) throw new NotFoundException('Room not found');
-
-    // Upload từng file lên S3
-    const uploadedUrls = await Promise.all(
-      files.map((file) => this.s3Service.uploadFile(file, `rooms/${id}`)),
-    );
-
-    // Lấy danh sách ảnh cũ, ghép với ảnh mới
-    const currentImages = (room.images as string[]) || [];
-    const newImages = [...currentImages, ...uploadedUrls];
-
-    // Cập nhật lại Room.images
-    await this.prisma.room.update({
-      where: { id },
-      data: { images: newImages },
-    });
-
-    // Trả về phòng đã cập nhật
-    return this.findOne(id);
-  }
-
-  async removeImages(
-    id: string,
-    imageUrls: string[],
-  ): Promise<RoomResponseDto> {
-    const room = await this.prisma.room.findUnique({ where: { id } });
-    if (!room) throw new NotFoundException('Room not found');
-
-    const currentImages = (room.images as string[]) || [];
-
-    // Lọc bỏ các ảnh cần xóa
-    const remainingImages = currentImages.filter(
-      (url) => !imageUrls.includes(url),
-    );
-
-    // Xóa ảnh trên S3 (không await để không làm chậm, nhưng vẫn log lỗi)
-    Promise.all(
-      imageUrls.map((url) =>
-        this.s3Service.deleteFile(url).catch((e) => console.error(e)),
-      ),
-    );
-
-    // Cập nhật DB
-    await this.prisma.room.update({
-      where: { id },
-      data: { images: remainingImages },
-    });
-
-    return this.findOne(id);
-  }
-
-  /** Thêm ảnh mới vào cuối danh sách hiện có */
-  async addImagesV2(
-    id: string,
-    files: Express.Multer.File[],
-  ): Promise<RoomResponseDto> {
-    if (!files?.length) {
-      throw new BadRequestException('Chưa chọn ảnh nào');
-    }
-
-    const room = await this.prisma.room.findUnique({
-      where: { id },
-      select: { id: true, images: true },
-    });
-
-    if (!room) throw new NotFoundException('Không tìm thấy phòng');
-
-    const current = (room.images as string[]) ?? [];
-    if (current.length + files.length > this.MAX_IMAGES_PER_ROOM) {
-      throw new BadRequestException(
-        `Mỗi phòng tối đa ${this.MAX_IMAGES_PER_ROOM} ảnh. Hiện có ${current.length}.`,
-      );
-    }
-
-    const newUrls = await this.s3Service.uploadMultiple(files, 'rooms');
-    const updated = await this.prisma.room.update({
-      where: { id },
-      data: { images: { ...current, ...newUrls } },
-      select: this.roomSelect(),
-    });
-
-    await this.redis.delByPattern('rooms:');
-    return this.transformRoom(updated);
-  }
-
-  async updateImages(
-    id: string,
-    dto: UpdateRoomImagesDto,
-  ): Promise<RoomResponseDto> {
-    const room = await this.prisma.room.findUnique({
-      where: { id },
-      select: { id: true, images: true },
-    });
-
-    if (!room) throw new NotFoundException('Không tìm thấy phòng');
-
-    const current = (room.images as string[]) ?? [];
-    const next = dto.images;
-
-    // Chặn URL lạ — chỉ cho phép sắp xếp hoặc bớt ảnh đã có,
-    // không cho gán URL tuỳ ý từ bên ngoài
-    const isValid = next.filter((i) => !current.includes(i));
-    if (isValid.length > 0) {
-      throw new BadRequestException(
-        'Danh sách chứa ảnh không thuộc phòng này. Dùng endpoint thêm ảnh để tải ảnh mới.',
-      );
-    }
-
-    const removed = current.filter((i) => !next.includes(i));
-
-    const updated = await this.prisma.room.update({
-      where: { id: room.id },
-      data: { images: next },
-      select: this.roomSelect(),
-    });
-
-    // Xoá file thừa sau khi DB đã cập nhật xong — nếu bước này lỗi
-    // thì chỉ còn file mồ côi trên S3, dữ liệu vẫn đúng
-
-    await this.s3Service.deleteMultiple(removed);
-    await this.redis.delByPattern('rooms:');
-
-    return this.transformRoom(updated);
-  }
-
-  // ============================HELPER======================================
-
-  private roomSelect() {
-    return {
-      id: true,
-      room_number: true,
-      floor: true,
-      status: true,
-      created_at: true,
-      updated_at: true,
-      images: true,
-      room_type: {
-        select: {
-          id: true,
-          name: true,
-          base_price: true,
-          capacity: true,
-          bed_type: true,
-          amenities: true,
-        },
-      },
-    };
-  }
-
-  private transformRoom(room: any): RoomResponseDto {
+  private transformRoom(room: RoomRow): RoomResponseDto {
     return {
       ...room,
-      images: (room.images as string[]) ?? [],
+      images: this.toImageList(room.images),
       room_type: {
         ...room.room_type,
-        base_price: Number(room.room_type.base_price),
+        base_price: Number(room.room_type.base_price), // Decimal -> number
         amenities: room.room_type.amenities as Amenity[],
       },
     };
   }
 
+  /** Cột Json có thể chứa bất cứ thứ gì -> chỉ nhận mảng chuỗi, còn lại coi như rỗng */
+  private toImageList(value: Prisma.JsonValue): string[] {
+    return Array.isArray(value)
+      ? value.filter((v): v is string => typeof v === 'string')
+      : [];
+  }
+
   private async validateRoomType(roomTypeId: string) {
     const roomType = await this.prisma.roomType.findUnique({
       where: { id: roomTypeId },
-      select: {
-        id: true,
-        is_active: true,
-      },
+      select: { id: true, is_active: true },
     });
-
-    if (!roomType) {
-      throw new NotFoundException('Room type not found');
-    }
-
-    if (!roomType.is_active) {
-      throw new BadRequestException('Room type is not active');
-    }
-
+    if (!roomType) throw new NotFoundException('Không tìm thấy loại phòng');
+    if (!roomType.is_active)
+      throw new BadRequestException('Loại phòng đã ngừng sử dụng');
     return roomType;
   }
 
-  // available   → cleaning ✅
-  // available   → maintenance ✅
-  // available   → occupied ❌ (hệ thống tự đổi khi check-in)npm
-  // cleaning    → available ✅
-  // maintenance → available ✅
-  // occupied    → cleaning ✅ (sau check-out)
-  // occupied    → available ❌ (phải qua cleaning trước)
-  // inactive    → bất kỳ ❌ (đã xóa mềm)
-  async updateStatus(id: string, dto: UpdateRoomStatusDto) {
-    const { status: newStatus } = dto;
-    const room = await this.prisma.room.findUnique({
-      where: { id },
-      select: { id: true, status: true },
-    });
-
-    if (!room) {
-      throw new NotFoundException('Room not found');
-    }
-
-    const validTransitions: Record<string, string[]> = {
-      available: ['cleaning', 'maintenance'],
-      cleaning: ['available'],
-      maintenance: ['available'],
-      occupied: ['cleaning'],
-      inactive: [],
-    };
-
-    const allowedStatus = validTransitions[room.status] ?? [];
-
-    if (!allowedStatus.includes(newStatus)) {
-      throw new BadRequestException(
-        `Do not allow to transalte from ${room.status} to ${newStatus}`,
-      );
-    }
-
-    const updateRoom = await this.prisma.room.update({
-      where: { id },
-      data: { status: newStatus },
-      select: this.roomSelect(),
-    });
-
-    return this.transformRoom(updateRoom);
+  /** Mọi thay đổi về phòng đều phải xoá cache tìm phòng trống */
+  private clearRoomCache() {
+    return this.redis.delByPattern('rooms:');
   }
 }

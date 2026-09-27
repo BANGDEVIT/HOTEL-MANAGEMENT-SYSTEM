@@ -161,7 +161,7 @@ Muted text:       #64748B
 Destructive:      #8C1D18
 ```
 
-Use **Tailwind utility classes** with these hex values directly (e.g. `bg-[#1B3A5C]`) — do NOT write plain CSS files. This project uses Tailwind + shadcn/ui throughout, not custom CSS.
+Use **Tailwind utility classes** with these hex values directly (e.g. `bg-navy-700`) — do NOT write plain CSS files. This project uses Tailwind + shadcn/ui throughout, not custom CSS.
 
 **Form pattern:** React Hook Form + `@hookform/resolvers/zod`, separate Zod schema for create vs edit (edit schema usually `.partial()` or hand-written subset).
 

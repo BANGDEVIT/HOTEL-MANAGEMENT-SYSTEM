@@ -2,8 +2,8 @@
 import { Global, Module } from '@nestjs/common';
 import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigService } from '@nestjs/config';
+import { createKeyv } from '@keyv/redis';
 import { RedisService } from './redis.service';
-import Redis from 'ioredis';
 
 @Global()
 @Module({
@@ -11,29 +11,17 @@ import Redis from 'ioredis';
     CacheModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const redisClient = new Redis({
-          host: config.get<string>('REDIS_HOST'),
-          port: config.get<number>('REDIS_PORT'),
-          password: config.get('REDIS_PASSWORD') || undefined,
-        });
+        const host = config.getOrThrow<string>('REDIS_HOST');
+        const port = config.getOrThrow<string>('REDIS_PORT');
+        const password = config.get<string>('REDIS_PASSWORD');
+        // encodeURIComponent: mật khẩu có ký tự đặc biệt (@, :, /) không làm hỏng URL
+        const auth = password ? `:${encodeURIComponent(password)}@` : '';
 
         return {
-          store: {
-            get: (key: string) =>
-              redisClient.get(key).then((v) => (v ? JSON.parse(v) : null)),
-            set: (key: string, value: unknown, ttl?: number) =>
-              ttl
-                ? redisClient.set(
-                    key,
-                    JSON.stringify(value),
-                    'EX',
-                    Math.ceil(ttl / 1000),
-                  )
-                : redisClient.set(key, JSON.stringify(value)),
-            del: (key: string) => redisClient.del(key),
-            reset: () => redisClient.flushdb(),
-            keys: (pattern: string) => redisClient.keys(pattern),
-          },
+          // cache-manager v7 CHỈ đọc "stores" (mảng Keyv). "store" cũ bị bỏ qua
+          // -> trước đây cache lặng lẽ nằm trong RAM, không vào Redis
+          stores: [createKeyv(`redis://${auth}${host}:${port}`)],
+          ttl: 60_000, // mặc định 60 giây nếu set() không truyền ttl
         };
       },
     }),
