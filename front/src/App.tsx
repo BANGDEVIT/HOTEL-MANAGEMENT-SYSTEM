@@ -12,6 +12,7 @@ import ShiftManagement from "./features/shifts/ShiftManagement";
 import MyShifts from "./features/shifts/components/MyShifts";
 import Unauthorized from "./pages/Unauthorized";
 import ProfilePage from "./features/profile/ProfilePage";
+import CustomerManagement from "./features/customer/CustomerManagement";
 
 export default function App() {
   const { bootstrap, isInitializing } = useAuthStore();
@@ -115,6 +116,17 @@ export default function App() {
             <ProtectedRoute allowedRoles={["admin", "manager", "staff"]}>
               <AdminLayout>
                 <ProfilePage />
+              </AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/customers"
+          element={
+            <ProtectedRoute allowedRoles={["admin", "manager", "staff"]}>
+              <AdminLayout>
+                <CustomerManagement />
               </AdminLayout>
             </ProtectedRoute>
           }
