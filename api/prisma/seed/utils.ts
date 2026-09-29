@@ -35,6 +35,18 @@ export const mondayOf = (ymd: string) => {
   return addDays(ymd, dow === 0 ? -6 : 1 - dow);
 };
 
+/**
+ * Mã booking "BK-YYMMDD-NNNN": ngày tạo theo giờ VN + số thứ tự.
+ * padStart KHÔNG cắt số: vượt 9999 thì thành 5 chữ số, không bị trùng.
+ */
+export function bookingCode(createdAt: Date, seq: number): string {
+  const ymd = createdAt
+    .toLocaleDateString('sv-SE', { timeZone: VN_TZ })
+    .replace(/-/g, '')
+    .slice(2);
+  return `BK-${ymd}-${String(seq).padStart(4, '0')}`;
+}
+
 export const roundTo = (n: number, step = 1000) => Math.round(n / step) * step;
 
 export const minutes = (n: number) => n * 60_000;

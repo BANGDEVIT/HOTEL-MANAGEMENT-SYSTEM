@@ -190,7 +190,7 @@ async function seedRooms(typeIds: Map<string, string>): Promise<SeedRoom[]> {
     select: {
       id: true,
       room_number: true,
-      room_type: { select: { name: true, base_price: true } },
+      room_type: { select: { name: true, base_price: true, capacity: true } },
     },
     orderBy: { room_number: 'asc' },
   });
@@ -201,6 +201,7 @@ async function seedRooms(typeIds: Map<string, string>): Promise<SeedRoom[]> {
     number: r.room_number,
     typeName: r.room_type.name,
     price: Number(r.room_type.base_price), // Decimal -> number
+    capacity: r.room_type.capacity,
   }));
 }
 
@@ -233,6 +234,10 @@ async function wipeTransactions(seedRoomIds: string[]) {
       where: { room_id: { in: seedRoomIds } },
     }),
   ]);
+  // Xoá hết booking -> đánh số mã booking lại từ 1
+  await prisma.$executeRawUnsafe(
+    'ALTER SEQUENCE "booking_code_seq" RESTART WITH 1',
+  );
 
   // Khách mẫu: nhận diện bằng SĐT / email trong data.ts
   const phones = CUSTOMERS.map((c) => c.phone);
@@ -277,11 +282,12 @@ async function seedCustomers(
   hash: string,
   today: string,
   plan: ReturnType<typeof planBookings>,
-): Promise<Map<string, string>> {
+): Promise<{ ids: Map<string, string>; accountIds: Map<string, string> }> {
   const customerRole = await prisma.role.findUniqueOrThrow({
     where: { name: 'customer' },
   });
   const ids = new Map<string, string>();
+  const accountIds = new Map<string, string>(); // chỉ thành viên có tài khoản
 
   for (const c of CUSTOMERS) {
     // Ngày tạo hồ sơ phải TRƯỚC booking đầu tiên của khách
@@ -325,36 +331,61 @@ async function seedCustomers(
           },
         }),
       },
-      select: { id: true },
+      select: { id: true, account_id: true },
     });
     ids.set(c.key, created.id);
+    if (created.account_id) accountIds.set(c.key, created.account_id);
   }
 
   const members = CUSTOMERS.filter((c) => c.member).length;
   console.log(`  ✓ ${CUSTOMERS.length} khách hàng (${members} thành viên)`);
-  return ids;
+  return { ids, accountIds };
 }
 
 async function seedBookings(
   plan: ReturnType<typeof planBookings>,
-  customerIds: Map<string, string>,
+  customers: { ids: Map<string, string>; accountIds: Map<string, string> },
   employees: EmployeeIds,
 ) {
+  const emp = (key: string | null) => (key ? employees.get(key)!.id : null);
+
+  /** 'employee:lan' -> account của Lan; 'customer:quan' -> account của khách Quân */
+  const cancellerAccount = (by: string) => {
+    const [kind, key] = by.split(':');
+    const id =
+      kind === 'employee'
+        ? employees.get(key)?.accountId
+        : customers.accountIds.get(key);
+    if (!id) throw new Error(`Không tìm thấy tài khoản cho "${by}"`);
+    return id;
+  };
+
   for (const b of plan.bookings) {
     const inv = b.invoice;
 
     // Nested create: 1 lệnh tạo luôn booking + phòng + dịch vụ + hoá đơn + thanh toán
     await prisma.booking.create({
       data: {
-        customer_id: customerIds.get(b.customerKey)!,
-        created_by: b.createdBy ? employees.get(b.createdBy)!.id : null,
+        code: b.code,
+        customer_id: customers.ids.get(b.customerKey)!,
         booking_type: b.type,
         status: b.status,
         check_in_date: dateOnly(b.from),
         check_out_date: dateOnly(b.to),
-        actual_check_in: b.actualIn,
-        actual_check_out: b.actualOut,
+        adults: b.adults,
+        children: b.children,
+        note: b.note,
         created_at: b.createdAt,
+        created_by: emp(b.createdBy),
+        confirmed_by: emp(b.confirmedBy),
+        confirmed_at: b.confirmedAt,
+        checked_in_by: emp(b.checkedInBy),
+        actual_check_in: b.actualIn,
+        checked_out_by: emp(b.checkedOutBy),
+        actual_check_out: b.actualOut,
+        cancelled_by: b.cancel ? cancellerAccount(b.cancel.by) : null,
+        cancelled_at: b.cancel?.at ?? null,
+        cancel_reason: b.cancel?.reason ?? null,
         booking_rooms: {
           create: b.rooms.map((r) => ({
             room_id: r.id,
@@ -385,6 +416,7 @@ async function seedBookings(
                   paid_at: p.paidAt,
                   created_at: p.paidAt,
                   reference_number: p.reference,
+                  received_by: emp(p.receivedBy),
                 })),
               },
             },
@@ -393,6 +425,11 @@ async function seedBookings(
       },
     });
   }
+
+  // Mã booking tạo trong app sau này chạy tiếp sau mã cuối của seed
+  await prisma.$executeRawUnsafe(
+    `SELECT setval('"booking_code_seq"', ${plan.bookings.length + 1}, false)`,
+  );
 
   const count = (s: string) =>
     plan.bookings.filter((b) => b.status === s).length;
@@ -403,7 +440,7 @@ async function seedBookings(
   );
   console.log(
     `  ✓ ${plan.bookings.length} booking: ${count('checked_in')} đang ở, ${count('confirmed')} đã xác nhận, ` +
-      `${count('pending')} chờ duyệt, ${count('checked_out')} đã trả phòng, ${count('cancelled')} đã huỷ`,
+      `${count('pending')} chờ duyệt, ${count('checked_out')} đã trả phòng, ${count('cancelled')} đã huỷ, ${count('no_show')} không đến`,
   );
   console.log(`  ✓ ${invoices} hoá đơn, ${payments} thanh toán`);
 }
@@ -490,10 +527,10 @@ async function main() {
   console.log('\nGiao dịch');
   await wipeTransactions(rooms.map((r) => r.id));
   const plan = planBookings({ today, now, rooms, services });
-  const customerIds = await seedCustomers(hash, today, plan);
-  await seedBookings(plan, customerIds, employees);
+  const customers = await seedCustomers(hash, today, plan);
+  await seedBookings(plan, customers, employees);
   await seedRoomStatus(plan, rooms, employees);
-  await seedNotes(customerIds, employees, today);
+  await seedNotes(customers.ids, employees, today);
 
   console.log(`\nXong. Mật khẩu mọi tài khoản: ${DEFAULT_PASSWORD}`);
   console.table([

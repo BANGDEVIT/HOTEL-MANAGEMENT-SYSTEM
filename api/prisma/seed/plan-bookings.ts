@@ -27,6 +27,7 @@ import {
   HISTORY_COUNT,
   HOUSEKEEPER,
   RANDOM_SEED,
+  MANAGERS,
   RECEPTIONISTS,
   SCRIPTED_BOOKINGS,
   SERVICES,
@@ -35,6 +36,7 @@ import {
 } from './data';
 import {
   addDays,
+  bookingCode,
   createRng,
   minutes,
   nightsBetween,
@@ -49,6 +51,7 @@ export interface SeedRoom {
   number: string;
   typeName: string;
   price: number;
+  capacity: number;
 }
 
 export interface SeedService {
@@ -62,6 +65,7 @@ export interface PlannedPayment {
   method: PaymentMethod;
   paidAt: Date;
   reference: string | null;
+  receivedBy: string; // employee key
 }
 
 export interface PlannedInvoice {
@@ -74,15 +78,25 @@ export interface PlannedInvoice {
 }
 
 export interface PlannedBooking {
+  code: string; // gán sau khi sắp xếp theo thời điểm tạo
   customerKey: string;
   type: BookingType;
   status: BookingStatus;
-  createdBy: string | null; // employee key
   from: string;
   to: string;
+  adults: number;
+  children: number;
+  note: string | null;
   createdAt: Date;
+  createdBy: string | null; // employee key; null = khách tự đặt online
+  confirmedBy: string | null;
+  confirmedAt: Date | null;
+  checkedInBy: string | null;
   actualIn: Date | null;
+  checkedOutBy: string | null;
   actualOut: Date | null;
+  /** by: 'employee:<key>' hoặc 'customer:<key>' (khách tự huỷ bằng tài khoản) */
+  cancel: { by: string; at: Date; reason: string } | null;
   rooms: SeedRoom[];
   services: {
     serviceId: string;
@@ -120,7 +134,14 @@ interface BookingSpec {
   services?: [string, number][];
   randomServices?: boolean;
   shuffleRooms?: boolean;
+  adults?: number;
+  children?: number;
+  note?: string;
+  cancel?: { by: string; reason: string };
 }
+
+const isManager = (key: string) =>
+  (MANAGERS as readonly string[]).includes(key);
 
 /* ============================ Lập kế hoạch ============================ */
 
@@ -186,8 +207,15 @@ export function planBookings(input: {
 
   /* ----- Tạo 1 booking từ mô tả ----- */
   const build = (spec: BookingSpec): PlannedBooking | null => {
-    // Booking đã huỷ không giữ phòng nhưng vẫn cần ghi phòng khách đã chọn
-    const holdsRoom = spec.status !== 'cancelled';
+    // online = khách tự đặt bằng tài khoản -> bắt buộc là thành viên
+    if (spec.type === 'online' && !members.has(spec.customerKey)) {
+      throw new Error(
+        `"${spec.customerKey}" không phải thành viên nên không thể có booking online`,
+      );
+    }
+
+    // Huỷ / không đến thì không giữ phòng, nhưng vẫn ghi phòng khách đã chọn
+    const holdsRoom = spec.status !== 'cancelled' && spec.status !== 'no_show';
     const picked = holdsRoom
       ? allocate(spec.typeNames, spec.from, spec.to, spec.shuffleRooms ?? false)
       : spec.typeNames.map((t) => rng.pick(roomsByType.get(t) ?? []));
@@ -216,13 +244,65 @@ export function planBookings(input: {
     } else if (actualIn) {
       createdAt = new Date(actualIn.getTime() - minutes(rng.int(5, 20))); // làm thủ tục tại quầy
     } else {
+      // Gọi điện đặt trước: vài ngày trước NGÀY ĐẾN (hoặc trước hôm nay nếu ngày đến còn ở tương lai)
+      const base = spec.from < today ? spec.from : today;
       createdAt = notFuture(
-        vnTime(addDays(today, -rng.int(1, 3)), rng.clock(8, 21)),
-      ); // gọi điện đặt trước
+        vnTime(addDays(base, -rng.int(1, 4)), rng.clock(8, 21)),
+      );
     }
 
     const createdBy =
       spec.type === 'walk_in' ? (spec.by ?? rng.pick(RECEPTIONISTS)) : null;
+
+    // ----- Xác nhận: lễ tân tạo thì xác nhận luôn; khách tự đặt thì lễ tân duyệt sau -----
+    // Huỷ bởi chính khách hoặc bị từ chối = huỷ lúc còn chờ duyệt -> chưa từng được xác nhận
+    // Khách tự huỷ ('self') hoặc lễ tân (không phải quản lý) từ chối -> huỷ lúc còn chờ duyệt.
+    // Quản lý huỷ -> booking đã được xác nhận trước đó (chỉ quản lý được huỷ booking đã xác nhận).
+    const cancelledWhilePending =
+      spec.status === 'cancelled' &&
+      spec.type === 'online' &&
+      !!spec.cancel &&
+      !isManager(spec.cancel.by);
+    let confirmedBy: string | null = null;
+    let confirmedAt: Date | null = null;
+    if (spec.status !== 'pending' && !cancelledWhilePending) {
+      confirmedBy = createdBy ?? rng.pick(RECEPTIONISTS);
+      confirmedAt = createdBy
+        ? createdAt
+        : notFuture(new Date(createdAt.getTime() + minutes(rng.int(15, 240))));
+      if (actualIn && confirmedAt > actualIn) confirmedAt = createdAt;
+    }
+
+    // ----- Huỷ -----
+    let cancel: PlannedBooking['cancel'] = null;
+    if (spec.status === 'cancelled') {
+      const c = spec.cancel ?? { by: rng.pick(MANAGERS), reason: 'Khách huỷ' };
+      const deadline = vnTime(spec.from, '12:00');
+      const start = confirmedAt ?? createdAt;
+      const at = rng.between(start, deadline < now ? deadline : now);
+      cancel = {
+        by:
+          c.by === 'self' ? `customer:${spec.customerKey}` : `employee:${c.by}`,
+        at: at < start ? start : at,
+        reason: c.reason,
+      };
+    }
+
+    // ----- Số người: không vượt sức chứa các phòng đã chọn -----
+    const capacity = picked.reduce((sum, r) => sum + r.capacity, 0);
+    const adults = Math.min(
+      spec.adults ?? rng.int(1, Math.min(2, capacity)),
+      capacity,
+    );
+    const children = Math.min(
+      spec.children ?? (rng.chance(0.2) ? rng.int(0, capacity - adults) : 0),
+      capacity - adults,
+    );
+
+    const checkedInBy = actualIn
+      ? (createdBy ?? rng.pick(RECEPTIONISTS))
+      : null;
+    const checkedOutBy = actualOut ? rng.pick(RECEPTIONISTS) : null;
 
     // Dịch vụ: chỉ có khi khách đã/đang ở
     const serviceLines: [string, number][] = stayed
@@ -240,15 +320,24 @@ export function planBookings(input: {
     });
 
     const booking: PlannedBooking = {
+      code: '', // gán sau khi sắp xếp
       customerKey: spec.customerKey,
       type: spec.type,
       status: spec.status,
-      createdBy,
       from: spec.from,
       to: spec.to,
+      adults,
+      children,
+      note: spec.note ?? null,
       createdAt,
+      createdBy,
+      confirmedBy,
+      confirmedAt,
+      checkedInBy,
       actualIn,
+      checkedOutBy,
       actualOut,
+      cancel,
       rooms: picked,
       services,
       invoice: null,
@@ -279,12 +368,16 @@ export function planBookings(input: {
     });
   }
 
+  /**
+   * Không có đặt cọc: hoá đơn tạo lúc CHECK-IN (chưa thanh toán),
+   * chốt và thu tiền một lần lúc CHECK-OUT.
+   */
   function buildInvoice(
     b: PlannedBooking,
     nights: number,
     allowDiscount: boolean,
   ): PlannedInvoice | null {
-    if (b.status === 'pending' || b.status === 'cancelled') return null;
+    if (b.status !== 'checked_in' && b.status !== 'checked_out') return null;
 
     const roomTotal = b.rooms.reduce((sum, r) => sum + r.price * nights, 0);
     const serviceTotal = b.services.reduce(
@@ -299,28 +392,8 @@ export function planBookings(input: {
         : 0;
     const final = total - discount;
 
+    // Thu tiền một lần lúc check-out, người thu = người làm check-out
     const payments: PlannedPayment[] = [];
-    let paid = 0;
-
-    // Đặt online: cọc 30% ngay sau khi đặt
-    if (b.type === 'online') {
-      const deposit = roundTo(final * 0.3);
-      const method = rng.pick(['bank_transfer', 'e_wallet'] as const);
-      // Cọc 10-120 phút sau khi đặt; booking vừa đặt xong thì cọc nằm giữa lúc đặt và bây giờ
-      const planned = new Date(
-        b.createdAt.getTime() + minutes(rng.int(10, 120)),
-      );
-      const paidAt = planned > now ? rng.between(b.createdAt, now) : planned;
-      payments.push({
-        amount: deposit,
-        method,
-        paidAt,
-        reference: reference(method, paidAt),
-      });
-      paid += deposit;
-    }
-
-    // Đã trả phòng: thanh toán phần còn lại lúc check-out
     if (b.status === 'checked_out') {
       const method = rng.weighted([
         ['cash', 4],
@@ -330,20 +403,17 @@ export function planBookings(input: {
       ] as const);
       const paidAt = b.actualOut!;
       payments.push({
-        amount: final - paid,
+        amount: final,
         method,
         paidAt,
         reference: reference(method, paidAt),
+        receivedBy: b.checkedOutBy!,
       });
-      paid = final;
     }
 
     const status: InvoiceStatus =
-      paid >= final ? 'paid' : paid > 0 ? 'partially_paid' : 'unpaid';
-    const createdAt =
-      b.type === 'online' ? b.createdAt : (b.actualIn ?? b.createdAt);
-
-    return { total, discount, final, status, createdAt, payments };
+      b.status === 'checked_out' ? 'paid' : 'unpaid';
+    return { total, discount, final, status, createdAt: b.actualIn!, payments };
   }
 
   function reference(method: PaymentMethod, at: Date): string | null {
@@ -369,6 +439,10 @@ export function planBookings(input: {
       type: s.type,
       by: s.by,
       services: s.services,
+      adults: s.adults,
+      children: s.children,
+      note: s.note,
+      cancel: s.cancel,
     });
     if (!b) {
       throw new Error(
@@ -391,13 +465,15 @@ export function planBookings(input: {
     const from = addDays(today, -rng.int(nights + 1, 150));
     const typeName = rng.weighted(TYPE_WEIGHTS);
 
+    const customerKey = rng.pick(pool);
     const b = build({
-      customerKey: rng.pick(pool),
+      customerKey,
       typeNames: rng.chance(0.1) ? [typeName, typeName] : [typeName],
       from,
       to: addDays(from, nights),
       status: 'checked_out',
-      type: rng.chance(0.6) ? 'online' : 'walk_in',
+      // Chỉ thành viên mới tự đặt online được
+      type: members.has(customerKey) && rng.chance(0.7) ? 'online' : 'walk_in',
       randomServices: true,
       shuffleRooms: true,
     });
@@ -407,7 +483,9 @@ export function planBookings(input: {
     }
   }
 
+  // Mã booking theo thứ tự tạo, giống cách sequence booking_code_seq cấp số trong app
   bookings.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  bookings.forEach((b, i) => (b.code = bookingCode(b.createdAt, i + 1)));
 
   return {
     bookings,

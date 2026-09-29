@@ -24,11 +24,12 @@ enum RoomStatus {
 }
 
 enum BookingStatus {
-  pending
-  confirmed
-  checked_in
-  checked_out
-  cancelled
+  pending // khách đặt online, chờ lễ tân duyệt
+  confirmed // đã xác nhận, giữ phòng
+  checked_in // đang ở
+  checked_out // đã trả phòng, hoá đơn đã chốt
+  cancelled // huỷ / từ chối trước khi đến
+  no_show // quá ngày đến mà không check-in
 }
 
 enum BookingType {
@@ -62,17 +63,17 @@ enum PaymentMethod {
   credit_card
 }
 
+enum IdType {
+  cccd
+  passport
+}
+
 enum BedType {
   single // 1 giường đơn
   double // 1 giường đôi
   twin // 2 giường đơn
   king // 1 giường king
   queen // 1 giường queen
-}
-
-enum IdType {
-  cccd
-  passport
 }
 
 // ===== MODELS =====
@@ -89,6 +90,7 @@ model Account {
   role_account        RoleAccount[]
   refreshTokens       RefreshToken[]
   roomStatusHistories RoomStatusHistory[]
+  cancelled_bookings  Booking[]           @relation("BookingCancelledBy")
 }
 
 model RefreshToken {
@@ -109,8 +111,8 @@ model Customer {
   last_name            String         @db.VarChar
   email                String?        @db.VarChar
   phone                String?        @db.VarChar
-  id_card              String?        @db.VarChar
   id_type              IdType?
+  id_card              String?        @db.VarChar
   id_card_img_url      String?
   id_card_img_back_url String?
   nationality          String?        @db.VarChar
@@ -119,29 +121,16 @@ model Customer {
   registered_at        DateTime? // thời điểm có tài khoản
   created_at           DateTime       @default(now())
   updated_at           DateTime       @updatedAt
-  notes                CustomerNote[]
 
-  account  Account?  @relation(fields: [account_id], references: [id])
+  account  Account?       @relation(fields: [account_id], references: [id])
   bookings Booking[]
+  notes    CustomerNote[]
 
+  @@index([id_card])
   @@index([email])
   @@index([phone])
   @@index([source])
-  @@index([id_card])
   @@index([account_id])
-}
-
-model CustomerNote {
-  id          String   @id @default(uuid()) @db.Uuid
-  customer_id String   @db.Uuid
-  author_id   String   @db.Uuid // nhân viên viết ghi chú
-  content     String   @db.VarChar(500)
-  created_at  DateTime @default(now())
-
-  customer Customer @relation(fields: [customer_id], references: [id], onDelete: Cascade)
-  author   Employee @relation(fields: [author_id], references: [id])
-
-  @@index([customer_id, created_at]) // lấy ghi chú của 1 khách, mới nhất trước
 }
 
 model Employee {
@@ -157,12 +146,16 @@ model Employee {
   position   String   @db.VarChar
   gender     String   @db.VarChar
 
-  account         Account         @relation(fields: [account_id], references: [id])
-  bookings        Booking[]
-  employee_shifts EmployeeShift[]
+  account            Account         @relation(fields: [account_id], references: [id])
+  created_bookings   Booking[]       @relation("BookingCreatedBy")
+  confirmed_bookings Booking[]       @relation("BookingConfirmedBy")
+  checked_in_by_me   Booking[]       @relation("BookingCheckedInBy")
+  checked_out_by_me  Booking[]       @relation("BookingCheckedOutBy")
+  received_payments  Payment[]
+  employee_shifts    EmployeeShift[]
+  customer_notes     CustomerNote[]
   // room_status_histories RoomStatusHistory[]
   // guests                Guest[]
-  customer_notes  CustomerNote[]
 }
 
 model EmployeeShift {
@@ -190,29 +183,46 @@ model Shift {
 }
 
 model Booking {
-  id               String        @id @default(uuid()) @db.Uuid
-  customer_id      String        @db.Uuid
-  created_by       String?       @db.Uuid
-  booking_type     BookingType
-  check_in_date    DateTime      @db.Date
-  check_out_date   DateTime      @db.Date
+  id             String        @id @default(uuid()) @db.Uuid
+  code           String        @unique @db.VarChar(20) // "BK-260929-0012", sinh từ sequence booking_code_seq
+  customer_id    String        @db.Uuid
+  booking_type   BookingType // walk_in = lễ tân tạo tại quầy, online = khách tự đặt
+  check_in_date  DateTime      @db.Date
+  check_out_date DateTime      @db.Date
+  adults         Int           @default(1) @db.SmallInt
+  children       Int           @default(0) @db.SmallInt // chỉ tính trẻ từ 6 tuổi (dưới 6 không vào sức chứa)
+  note           String?       @db.VarChar(500)
+  status         BookingStatus @default(pending)
+
+  // ----- ai làm, lúc nào -----
+  created_by       String?   @db.Uuid // null = khách tự đặt online
+  confirmed_by     String?   @db.Uuid
+  confirmed_at     DateTime?
+  checked_in_by    String?   @db.Uuid
   actual_check_in  DateTime?
+  checked_out_by   String?   @db.Uuid
   actual_check_out DateTime?
-  status           BookingStatus @default(pending)
-  // guest_id         String?       @db.Uuid
-  created_at       DateTime      @default(now())
-  updated_at       DateTime      @updatedAt
+  cancelled_by     String?   @db.Uuid // account: khách tự huỷ hoặc nhân viên huỷ
+  cancelled_at     DateTime?
+  cancel_reason    String?   @db.VarChar(300)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   customer         Customer         @relation(fields: [customer_id], references: [id])
-  employee         Employee?        @relation(fields: [created_by], references: [id])
-  // guest            Guest?           @relation(fields: [guest_id], references: [id])
+  creator          Employee?        @relation("BookingCreatedBy", fields: [created_by], references: [id])
+  confirmer        Employee?        @relation("BookingConfirmedBy", fields: [confirmed_by], references: [id])
+  check_in_staff   Employee?        @relation("BookingCheckedInBy", fields: [checked_in_by], references: [id])
+  check_out_staff  Employee?        @relation("BookingCheckedOutBy", fields: [checked_out_by], references: [id])
+  canceller        Account?         @relation("BookingCancelledBy", fields: [cancelled_by], references: [id])
   invoices         Invoice[]
   booking_services BookingService[]
   booking_rooms    BookingRoom[]
 
   @@index([customer_id]) // tìm booking của customer
   @@index([status]) // filter booking theo trạng thái
-  @@index([check_in_date, check_out_date]) // query phòng trống theo ngày — quan trọng nhất
+  @@index([check_in_date, check_out_date]) // query phòng trống theo ngày, "Đến hôm nay"
+  @@index([check_out_date]) // "Đi hôm nay"
 }
 
 model Invoice {
@@ -238,9 +248,12 @@ model Payment {
   paid_at          DateTime      @default(now())
   reference_number String?       @db.VarChar // nullable — tiền mặt không có mã GD
   payment_method   PaymentMethod
+  received_by      String?       @db.Uuid // nhân viên thu tiền
+  note             String?       @db.VarChar(300)
   created_at       DateTime      @default(now())
 
-  invoice Invoice @relation(fields: [invoice_id], references: [id])
+  invoice  Invoice   @relation(fields: [invoice_id], references: [id])
+  receiver Employee? @relation(fields: [received_by], references: [id])
 
   @@index([invoice_id]) // lấy thanh toán của invoice
 }
@@ -384,3 +397,16 @@ model Role {
 //   employee Employee? @relation(fields: [create_by_staff_id], references: [id])
 //   bookings Booking[]
 // }
+
+model CustomerNote {
+  id          String   @id @default(uuid()) @db.Uuid
+  customer_id String   @db.Uuid
+  author_id   String   @db.Uuid
+  content     String   @db.VarChar(500)
+  created_at  DateTime @default(now())
+
+  customer Customer @relation(fields: [customer_id], references: [id])
+  author   Employee @relation(fields: [author_id], references: [id])
+
+  @@index([customer_id, created_at])
+}

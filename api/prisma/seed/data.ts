@@ -167,6 +167,8 @@ export const EMPLOYEES: EmployeeSeed[] = [
 
 /** Ai được ghi là "người tạo booking" cho khách đặt tại quầy */
 export const RECEPTIONISTS = ['lan', 'mai', 'bang', 'tuan'] as const;
+/** Quản lý: người duy nhất được huỷ booking đã xác nhận */
+export const MANAGERS = ['bang', 'tuan'] as const;
 /** Buồng phòng: người chuyển phòng từ "đang dọn" về "trống" */
 export const HOUSEKEEPER = 'ha';
 
@@ -681,10 +683,19 @@ export interface ScriptedBooking {
   from: number; // lệch so với hôm nay
   to: number;
   status: BookingStatus;
+  /**
+   * online  = khách TỰ đặt bằng tài khoản -> chỉ dùng cho thành viên
+   * walk_in = lễ tân tạo (tại quầy, hoặc khách gọi điện / gửi email)
+   */
   type: BookingType;
-  /** Khách đặt tại quầy: ai tạo. Bỏ trống = chọn ngẫu nhiên 1 lễ tân */
+  /** walk_in: lễ tân nào tạo. Bỏ trống = chọn ngẫu nhiên */
   by?: string;
   services?: [serviceKey: string, qty: number][];
+  adults?: number;
+  children?: number;
+  note?: string;
+  /** Chỉ dùng khi status = cancelled. by: key nhân viên, hoặc 'self' = khách tự huỷ */
+  cancel?: { by: string; reason: string };
 }
 
 /**
@@ -700,6 +711,7 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     to: 1,
     status: 'checked_in',
     type: 'online',
+    adults: 2,
     services: [
       ['breakfast', 4],
       ['laundry', 2],
@@ -711,7 +723,9 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     from: -3,
     to: 2,
     status: 'checked_in',
-    type: 'online',
+    type: 'walk_in',
+    by: 'mai',
+    note: 'Đặt qua email, cần hoá đơn VAT',
     services: [
       ['airport', 1],
       ['spa', 1],
@@ -734,7 +748,10 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     from: 0,
     to: 3,
     status: 'checked_in',
-    type: 'online',
+    type: 'walk_in',
+    by: 'lan',
+    adults: 2,
+    children: 2,
     services: [['extra_bed', 3]],
   }, // vừa nhận phòng hôm nay
   {
@@ -744,15 +761,18 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     to: 2,
     status: 'checked_in',
     type: 'online',
+    adults: 4,
+    note: 'Đoàn 2 phòng, thanh toán chung',
     services: [['breakfast', 4]],
-  }, // đoàn 2 phòng
+  },
   {
     customer: 'kenji',
     rooms: ['Deluxe'],
     from: -4,
     to: 1,
     status: 'checked_in',
-    type: 'online',
+    type: 'walk_in',
+    by: 'mai',
     services: [
       ['motorbike', 3],
       ['laundry', 3],
@@ -773,7 +793,9 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     from: -2,
     to: 3,
     status: 'checked_in',
-    type: 'online',
+    type: 'walk_in',
+    by: 'bang',
+    adults: 2,
     services: [
       ['airport', 1],
       ['spa', 2],
@@ -798,6 +820,7 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     to: 0,
     status: 'checked_out',
     type: 'online',
+    adults: 2,
     services: [
       ['breakfast', 3],
       ['snack', 2],
@@ -813,7 +836,8 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     status: 'confirmed',
     type: 'walk_in',
     by: 'mai',
-  }, // gọi điện đặt, chưa có CCCD
+    note: 'Gọi điện đặt, đến khoảng 20h. Chưa có CCCD',
+  },
   {
     customer: 'phuc',
     rooms: ['Deluxe'],
@@ -821,6 +845,7 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     to: 3,
     status: 'confirmed',
     type: 'online',
+    adults: 2,
   },
   {
     customer: 'minjun',
@@ -828,7 +853,8 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     from: 0,
     to: 4,
     status: 'confirmed',
-    type: 'online',
+    type: 'walk_in',
+    by: 'lan',
   },
 
   // ----- Sắp tới -----
@@ -839,6 +865,7 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     to: 5,
     status: 'confirmed',
     type: 'online',
+    adults: 2,
   },
   {
     customer: 'ngan',
@@ -848,6 +875,7 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     status: 'confirmed',
     type: 'walk_in',
     by: 'lan',
+    note: 'Đặt qua điện thoại, chưa có CCCD',
   },
   {
     customer: 'vy',
@@ -856,6 +884,8 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     to: 8,
     status: 'confirmed',
     type: 'online',
+    adults: 2,
+    children: 1,
   },
   {
     customer: 'lukas',
@@ -863,7 +893,8 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     from: 7,
     to: 10,
     status: 'confirmed',
-    type: 'online',
+    type: 'walk_in',
+    by: 'mai',
   },
   {
     customer: 'emily',
@@ -880,6 +911,7 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     to: 16,
     status: 'confirmed',
     type: 'online',
+    adults: 2,
   },
   {
     customer: 'olivia',
@@ -887,20 +919,23 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     from: 20,
     to: 25,
     status: 'confirmed',
-    type: 'online',
+    type: 'walk_in',
+    by: 'mai',
+    adults: 3,
   },
 
-  // ----- Chờ xác nhận (khách đặt online, lễ tân chưa duyệt) -----
+  // ----- Chờ duyệt: thành viên tự đặt qua API, lễ tân chưa duyệt -----
   {
-    customer: 'uyen',
+    customer: 'tuananh',
     rooms: ['Standard'],
     from: 6,
     to: 8,
     status: 'pending',
     type: 'online',
+    adults: 2,
   },
   {
-    customer: 'my',
+    customer: 'nam',
     rooms: ['Deluxe'],
     from: 12,
     to: 13,
@@ -908,12 +943,14 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     type: 'online',
   },
   {
-    customer: 'tai',
-    rooms: ['Family'],
-    from: 9,
-    to: 11,
+    customer: 'khoa',
+    rooms: ['Suite'],
+    from: 30,
+    to: 32,
     status: 'pending',
     type: 'online',
+    adults: 2,
+    note: 'Kỷ niệm ngày cưới, xin phòng tầng cao',
   },
 
   // ----- Đã huỷ -----
@@ -924,6 +961,7 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     to: -18,
     status: 'cancelled',
     type: 'online',
+    cancel: { by: 'self', reason: 'Khách đổi kế hoạch' },
   },
   {
     customer: 'quan',
@@ -932,6 +970,16 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     to: -7,
     status: 'cancelled',
     type: 'online',
+    cancel: { by: 'tuan', reason: 'Khách huỷ sát ngày đến' },
+  },
+  {
+    customer: 'trang',
+    rooms: ['Family'],
+    from: 3,
+    to: 5,
+    status: 'cancelled',
+    type: 'online',
+    cancel: { by: 'lan', reason: 'Từ chối: hết phòng Family ngày khách chọn' },
   },
   {
     customer: 'long',
@@ -939,7 +987,9 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     from: 4,
     to: 6,
     status: 'cancelled',
-    type: 'online',
+    type: 'walk_in',
+    by: 'lan',
+    cancel: { by: 'bang', reason: 'Khách gọi điện huỷ' },
   },
   {
     customer: 'hieu',
@@ -947,6 +997,28 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     from: -8,
     to: -6,
     status: 'cancelled',
+    type: 'walk_in',
+    by: 'mai',
+    cancel: { by: 'bang', reason: 'Khách đổi sang ngày khác' },
+  },
+
+  // ----- Không đến (no_show): qua ngày đến mà không check-in -----
+  {
+    customer: 'binh',
+    rooms: ['Standard'],
+    from: -3,
+    to: -1,
+    status: 'no_show',
+    type: 'walk_in',
+    by: 'lan',
+    note: 'Gọi điện đặt',
+  },
+  {
+    customer: 'an',
+    rooms: ['Superior'],
+    from: -2,
+    to: 0,
+    status: 'no_show',
     type: 'walk_in',
     by: 'mai',
   },
