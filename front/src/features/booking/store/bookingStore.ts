@@ -1,8 +1,12 @@
-import { create } from 'zustand';
-import { toast } from 'sonner';
-import { bookingApi } from '../../../api/bookingApi';
-import type { BookingFilters, BookingListItem, BookingStats } from '../../../types/booking';
-import { getErrorMessage } from '../../../utils/errorMessage';
+import { create } from "zustand";
+import { toast } from "sonner";
+import { bookingApi } from "../../../api/bookingApi";
+import type {
+  BookingFilters,
+  BookingListItem,
+  BookingStats,
+} from "../../../types/booking";
+import { errorMessage } from "../../../utils/errorMessage";
 
 /**
  * Store chỉ giữ dữ liệu DANH SÁCH (toolbar, bảng, ô số liệu cùng dùng).
@@ -12,13 +16,13 @@ import { getErrorMessage } from '../../../utils/errorMessage';
 export const DEFAULT_FILTERS: BookingFilters = {
   page: 1,
   limit: 20,
-  tab: 'arrivals', // mở màn hình là thấy ngay khách đến hôm nay
-  search: '',
-  booking_type: '',
-  from: '',
-  to: '',
-  sort: '',
-  order: '',
+  tab: "arrivals", // mở màn hình là thấy ngay khách đến hôm nay
+  search: "",
+  booking_type: "",
+  from: "",
+  to: "",
+  sort: "",
+  order: "",
 };
 
 interface BookingState {
@@ -58,10 +62,15 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     try {
       const res = await bookingApi.list(get().filters);
       if (requestId !== listRequestId) return;
-      set({ bookings: res.data, total: res.total, totalPages: res.totalPages, lastUpdated: new Date() });
+      set({
+        bookings: res.data,
+        total: res.total,
+        totalPages: res.totalPages,
+        lastUpdated: new Date(),
+      });
     } catch (err) {
       if (requestId !== listRequestId) return;
-      toast.error(getErrorMessage(err, 'Không tải được danh sách đặt phòng'));
+      toast.error(errorMessage(err, "Không tải được danh sách đặt phòng"));
     } finally {
       if (requestId === listRequestId) set({ loading: false });
     }
@@ -71,13 +80,15 @@ export const useBookingStore = create<BookingState>((set, get) => ({
     try {
       set({ stats: await bookingApi.stats() });
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Không tải được số liệu đặt phòng'));
+      toast.error(errorMessage(err, "Không tải được số liệu đặt phòng"));
     }
   },
 
   setFilters: (patch) => {
-    const onlyPage = Object.keys(patch).every((k) => k === 'page');
-    set((s) => ({ filters: { ...s.filters, ...patch, ...(onlyPage ? {} : { page: 1 }) } }));
+    const onlyPage = Object.keys(patch).every((k) => k === "page");
+    set((s) => ({
+      filters: { ...s.filters, ...patch, ...(onlyPage ? {} : { page: 1 }) },
+    }));
     void get().fetchBookings();
   },
 

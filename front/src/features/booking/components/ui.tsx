@@ -2,31 +2,21 @@
  * Mảnh giao diện nhỏ dùng chung trong màn Đặt phòng.
  * Mọi component khai báo ở cấp ngoài cùng file (DESIGN.md mục 8).
  */
-import { useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { ChevronDown, X } from 'lucide-react';
-import type { BookingStatus } from '../../../types/booking';
-import { STATUS_META } from '../utils/format';
-
-/* ============================ Class dùng lại ============================ */
-
-export const INPUT =
-  'h-10 w-full rounded-[10px] border border-line-input bg-white px-3 text-[13.5px] text-ink placeholder:text-ink-faint focus:border-navy-700 focus:outline-none focus:ring-3 focus:ring-gold-500/30 disabled:bg-cream-50 disabled:text-ink-faint';
-export const BTN_PRIMARY =
-  'h-10 whitespace-nowrap rounded-[10px] bg-navy-700 px-5 text-[13.5px] font-semibold text-white hover:bg-navy-hover disabled:cursor-not-allowed disabled:opacity-50';
-export const BTN_GOLD =
-  'h-10 whitespace-nowrap rounded-[10px] bg-gold-500 px-5 text-[13.5px] font-semibold text-navy-900 hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50';
-export const BTN_DANGER =
-  'h-10 whitespace-nowrap rounded-[10px] bg-room-occupied px-5 text-[13.5px] font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50';
-export const BTN_SECONDARY =
-  'h-10 whitespace-nowrap rounded-[10px] border border-line-input bg-white px-4 text-[13px] font-medium text-ink hover:border-navy-700 disabled:cursor-not-allowed disabled:opacity-50';
-export const BTN_SMALL =
-  'h-8 whitespace-nowrap rounded-[8px] border border-line-input bg-white px-3 text-[12.5px] font-medium text-ink hover:border-navy-700 disabled:opacity-50';
-export const LINK_BTN = 'whitespace-nowrap text-[12.5px] font-medium text-navy-700 hover:underline disabled:opacity-50';
+import { useEffect } from "react";
+import { createPortal } from "react-dom";
+import { ChevronDown, X } from "lucide-react";
+import type { BookingStatus } from "../../../types/booking";
+import { STATUS_META } from "../utils/format";
 
 /* ============================ Pill trạng thái ============================ */
 
-export function StatusPill({ status, className = '' }: { status: BookingStatus; className?: string }) {
+export function StatusPill({
+  status,
+  className = "",
+}: {
+  status: BookingStatus;
+  className?: string;
+}) {
   const { label, color } = STATUS_META[status];
   return (
     <span
@@ -39,7 +29,13 @@ export function StatusPill({ status, className = '' }: { status: BookingStatus; 
   );
 }
 
-export function Badge({ className, children }: { className: string; children: React.ReactNode }) {
+export function Badge({
+  className,
+  children,
+}: {
+  className: string;
+  children: React.ReactNode;
+}) {
   return (
     <span
       className={`inline-flex items-center gap-1 whitespace-nowrap rounded-[5px] px-1.5 py-px text-[10.5px] font-medium ${className}`}
@@ -56,7 +52,7 @@ export function Field({
   required,
   error,
   hint,
-  className = '',
+  className = "",
   children,
 }: {
   label: string;
@@ -89,13 +85,17 @@ export function Segmented<T extends string>({
   onChange,
   label,
 }: {
-  value: T | '';
+  value: T | "";
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
   label: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex h-10 rounded-[10px] bg-segment p-[3px]">
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="flex h-10 rounded-[10px] bg-segment p-[3px]"
+    >
       {options.map((o) => (
         <button
           key={o.value}
@@ -104,7 +104,9 @@ export function Segmented<T extends string>({
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
           className={`flex-1 whitespace-nowrap rounded-[8px] px-2 text-[13px] transition-colors ${
-            value === o.value ? 'bg-white font-semibold text-ink shadow-[0_1px_2px_rgba(20,38,59,.1)]' : 'text-ink-muted'
+            value === o.value
+              ? "bg-white font-semibold text-ink shadow-[0_1px_2px_rgba(20,38,59,.1)]"
+              : "text-ink-muted"
           }`}
         >
           {o.label}
@@ -128,16 +130,31 @@ export function Stepper({
   onChange: (v: number) => void;
   label: string;
 }) {
-  const btn = 'h-full w-9 text-[16px] text-ink hover:bg-segment disabled:opacity-30';
+  const btn = "h-full w-9 text-[16px] text-ink hover:bg-segment disabled:opacity-30";
   return (
     <div className="flex h-10 items-center overflow-hidden rounded-[10px] border border-line-input bg-white">
-      <button type="button" aria-label={`Bớt ${label}`} disabled={value <= min} onClick={() => onChange(value - 1)} className={btn}>
+      <button
+        type="button"
+        aria-label={`Bớt ${label}`}
+        disabled={value <= min}
+        onClick={() => onChange(value - 1)}
+        className={btn}
+      >
         −
       </button>
-      <span className="flex-1 text-center text-[14px] font-semibold tabular-nums" aria-live="polite">
+      <span
+        className="flex-1 text-center text-[14px] font-semibold tabular-nums"
+        aria-live="polite"
+      >
         {value}
       </span>
-      <button type="button" aria-label={`Thêm ${label}`} disabled={value >= max} onClick={() => onChange(value + 1)} className={btn}>
+      <button
+        type="button"
+        aria-label={`Thêm ${label}`}
+        disabled={value >= max}
+        onClick={() => onChange(value + 1)}
+        className={btn}
+      >
         +
       </button>
     </div>
@@ -158,17 +175,24 @@ export function SelectChip({
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
 }) {
-  const current = options.find((o) => o.value === value)?.label ?? '';
+  const current = options.find((o) => o.value === value)?.label ?? "";
   const active = value !== options[0]?.value;
   return (
     <label
       className={`relative flex h-8 items-center gap-1.5 whitespace-nowrap rounded-[8px] border pl-3 pr-2 text-[12.5px] ${
-        active ? 'border-gold-500 bg-gold-50' : 'border-line bg-white hover:border-line-input'
+        active
+          ? "border-gold-500 bg-gold-50"
+          : "border-line bg-white hover:border-line-input"
       }`}
     >
       <span className="text-ink-faint">{label}:</span>
       <span className="font-medium text-ink">{current}</span>
-      <ChevronDown size={13} strokeWidth={2} className="text-ink-faint" aria-hidden="true" />
+      <ChevronDown
+        size={13}
+        strokeWidth={2}
+        className="text-ink-faint"
+        aria-hidden="true"
+      />
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -176,7 +200,10 @@ export function SelectChip({
         className="absolute inset-0 cursor-pointer opacity-0"
       >
         {options.map((o) => (
-          <option key={o.value} value={o.value}>
+          <option
+            key={o.value}
+            value={o.value}
+          >
             {o.label}
           </option>
         ))}
@@ -216,9 +243,9 @@ export function DialogShell({
   children: React.ReactNode;
 }) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onClose();
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !busy && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, [busy, onClose]);
 
   return createPortal(
@@ -240,8 +267,14 @@ export function DialogShell({
       >
         <header className="flex items-start justify-between gap-4 border-b border-line px-6 py-4">
           <div className="min-w-0">
-            <h2 className="font-display text-[20px] font-bold text-navy-900">{title}</h2>
-            {subtitle && <p className="mt-0.5 text-[12.5px] tabular-nums text-ink-muted">{subtitle}</p>}
+            <h2 className="font-display text-[20px] font-bold text-navy-900">
+              {title}
+            </h2>
+            {subtitle && (
+              <p className="mt-0.5 text-[12.5px] tabular-nums text-ink-muted">
+                {subtitle}
+              </p>
+            )}
           </div>
           <button
             type="button"

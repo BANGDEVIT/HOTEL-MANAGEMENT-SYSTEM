@@ -22,6 +22,9 @@ import {
   normalizePhone,
 } from "../utils/format";
 
+/** Mảng rỗng khai báo 1 lần ngoài component -> luôn là CÙNG một tham chiếu */
+const NO_ROLES: string[] = [];
+
 export type FormTarget =
   | { mode: "create" }
   | { mode: "edit"; customer: CustomerDetail };
@@ -134,7 +137,10 @@ function FormBody({
   onOpenExisting,
 }: Props & { target: FormTarget }) {
   const editing = target.mode === "edit" ? target.customer : null;
-  const roles = useAuthStore((s) => s.user?.roles ?? []);
+  // KHÔNG viết `s.user?.roles ?? []` trong selector: chưa có user thì mỗi lần gọi tạo 1 mảng MỚI
+  // -> Zustand tưởng state đổi -> render lại -> lặp vô hạn ("getSnapshot should be cached").
+  // Lấy giá trị gốc (có thể undefined) rồi mới gán mặc định bên ngoài selector.
+  const roles = useAuthStore((s) => s.user?.roles) ?? NO_ROLES;
   const isManager = roles.includes("manager") || roles.includes("admin");
 
   const {

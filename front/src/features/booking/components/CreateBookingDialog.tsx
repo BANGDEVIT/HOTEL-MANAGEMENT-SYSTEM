@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { Check, Loader2, Search, Star, UserPlus } from "lucide-react";
 import { bookingApi } from "../../../api/bookingApi";
@@ -21,23 +22,14 @@ import {
   formatAmount,
   formatPhone,
   formatRange,
+  idCardError,
   initialsOfFullName,
   nightsBetween,
   normalizeIdCard,
   todayYmd,
 } from "../utils/format";
-import { idCardError } from "./CheckInDialog";
-import {
-  BTN_GOLD,
-  BTN_PRIMARY,
-  BTN_SECONDARY,
-  DialogShell,
-  Field,
-  INPUT,
-  LINK_BTN,
-  Segmented,
-  Stepper,
-} from "./ui";
+import { BTN_GOLD, BTN_PRIMARY, BTN_SECONDARY, INPUT, LINK_BTN } from "./styles";
+import { DialogShell, Field, Segmented, Stepper } from "./ui";
 
 interface Props {
   /** Mở từ hồ sơ khách: điền sẵn khách, vào thẳng bước 2 */
@@ -440,21 +432,30 @@ export default function CreateBookingDialog({
         </div>
       </DialogShell>
 
-      {showCustomerForm && (
-        <CustomerFormDialog
-          target={{ mode: "create" }}
-          onClose={() => setShowCustomerForm(false)}
-          onSaved={(c) => pickCustomer(c)}
-          onOpenExisting={(id) => {
-            customerApi
-              .detail(id)
-              .then(pickCustomer)
-              .catch((err) =>
-                toast.error(errorMessage(err, "Không mở được hồ sơ khách")),
-              );
-          }}
-        />
-      )}
+      {/*
+        Form khách cũng phải đi qua PORTAL: hộp thoại Tạo đặt phòng đã được portal ra cuối <body>,
+        nếu form khách render tại chỗ (nằm TRƯỚC trong DOM) thì cùng z-50 sẽ bị đè xuống dưới.
+        Portal sau -> nằm sau trong DOM -> hiện lên trên. z-[60] để chắc chắn luôn nổi trên cùng.
+      */}
+      {showCustomerForm &&
+        createPortal(
+          <div className="relative z-[60]">
+            <CustomerFormDialog
+              target={{ mode: "create" }}
+              onClose={() => setShowCustomerForm(false)}
+              onSaved={(c) => pickCustomer(c)}
+              onOpenExisting={(id) => {
+                customerApi
+                  .detail(id)
+                  .then(pickCustomer)
+                  .catch((err) =>
+                    toast.error(errorMessage(err, "Không mở được hồ sơ khách")),
+                  );
+              }}
+            />
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

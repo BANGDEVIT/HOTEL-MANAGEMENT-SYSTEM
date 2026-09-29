@@ -9,17 +9,9 @@ import {
   type BookingDetail,
   type PaymentMethod,
 } from "../../../types/booking";
-import { formatAmount } from "../utils/format";
-import { bookingSubtitle } from "./BookingActionDialogs";
-import {
-  BTN_PRIMARY,
-  BTN_SECONDARY,
-  DialogShell,
-  Field,
-  INPUT,
-  LINK_BTN,
-  Segmented,
-} from "./ui";
+import { bookingSubtitle, formatAmount } from "../utils/format";
+import { BTN_PRIMARY, BTN_SECONDARY, INPUT, LINK_BTN } from "./styles";
+import { DialogShell, Field, Segmented } from "./ui";
 
 interface Props {
   booking: BookingDetail;
