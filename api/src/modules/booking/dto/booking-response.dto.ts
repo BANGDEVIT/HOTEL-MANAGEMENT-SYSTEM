@@ -1,116 +1,200 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BookingStatus, BookingType } from '@prisma/client';
+import {
+  BookingStatus,
+  BookingType,
+  InvoiceStatus,
+  PaymentMethod,
+} from '@prisma/client';
+import { BOOKING_ACTIONS, type BookingAction } from '../booking.rules';
 
-export class CustomerInBookingDto {
+/* ============================================================
+ *  PHẦN DÙNG CHUNG
+ * ============================================================ */
+
+export class BookingCustomerDto {
+  @ApiProperty() id: string;
+  @ApiProperty({ example: 'Trần Minh Khoa' }) full_name: string;
+  @ApiProperty({ nullable: true }) phone: string | null;
+  @ApiProperty({ description: 'Có tài khoản thành viên (được tích điểm)' })
+  is_member: boolean;
+}
+
+export class BookingRoomDto {
+  @ApiProperty() id: string;
+  @ApiProperty({ example: '302' }) room_number: string;
+  @ApiProperty() floor: number;
+  @ApiProperty({ example: 'Deluxe Double' }) room_type: string;
+  @ApiProperty() capacity: number;
   @ApiProperty({
-    example: 'uuid-123',
+    example: 700000,
+    description: 'Giá chốt lúc đặt, đổi giá loại phòng sau không ảnh hưởng',
   })
-  id: string;
-
-  @ApiProperty({ example: 'Bui Cong Bang' })
-  full_name: string;
-
-  @ApiProperty({ example: '0123456789' })
-  phone: string;
-
-  @ApiProperty({ example: 'buicongbang@gmail.com' })
-  email: string;
-}
-
-export class RoomInBookingDto {
-  @ApiProperty({ example: 'uuid-123' })
-  id: string;
-
-  @ApiProperty({ example: 'A306' })
-  room_number: string;
-
-  @ApiProperty({ example: 'Vip' })
-  room_type_name: string;
-
-  @ApiProperty({ example: 500000 })
   price_per_night: number;
-
-  @ApiProperty({ example: 1 })
-  floor: number;
 }
 
-export class InvoiceInBookingDto {
-  @ApiProperty({ example: 'uuid-123' })
-  id: string;
+/* ============================================================
+ *  DANH SÁCH
+ * ============================================================ */
 
-  @ApiProperty({ example: 1000000 })
-  total_amount: number;
+export class BookingListItemDto {
+  @ApiProperty() id: string;
+  @ApiProperty({ example: 'BK-260929-0012' }) code: string;
+  @ApiProperty({ enum: BookingStatus }) status: BookingStatus;
+  @ApiProperty({ enum: BookingType }) booking_type: BookingType;
+  @ApiProperty({ example: '2026-10-05' }) check_in_date: string;
+  @ApiProperty({ example: '2026-10-07' }) check_out_date: string;
+  @ApiProperty() nights: number;
+  @ApiProperty() adults: number;
+  @ApiProperty() children: number;
+  @ApiProperty({ type: BookingCustomerDto }) customer: BookingCustomerDto;
+  @ApiProperty({ type: BookingRoomDto, nullable: true })
+  room: BookingRoomDto | null;
 
-  @ApiProperty({ example: 100 })
-  discount: number;
+  @ApiProperty({
+    description:
+      'Có hoá đơn thì lấy tổng hoá đơn, chưa có thì tiền phòng dự kiến. Huỷ / không đến = 0',
+  })
+  amount: number;
 
-  @ApiProperty({ example: 0 })
-  final_amount: number;
+  @ApiProperty({
+    description:
+      'Quá hạn: confirmed mà đã qua ngày nhận, hoặc checked_in mà đã qua ngày trả',
+  })
+  is_overdue: boolean;
 
-  @ApiProperty({ example: 'unpaid' })
-  status: string;
-}
-
-export class BookingResponseDto {
-  @ApiProperty({ example: 'uuid-123' })
-  id: string;
-
-  @ApiProperty({ example: 'online', enum: BookingType })
-  booking_type: BookingType;
-
-  @ApiProperty({ example: 'pending', enum: BookingStatus })
-  status: BookingStatus;
-
-  @ApiProperty({ example: '2026-06-01' })
-  check_in_date: Date;
-
-  @ApiProperty({ example: '2026-06-03' })
-  check_out_date: Date;
-
-  @ApiPropertyOptional({ example: '2026-06-01T14:00:00.000Z' })
-  actual_check_in: Date | null;
-
-  @ApiPropertyOptional({ example: '2026-06-03T12:00:00.000Z' })
-  actual_check_out: Date | null;
-
-  // @ApiPropertyOptional({ example: 'Cần phòng tầng cao' })
-  // special_requests: string | null;
-
-  @ApiProperty({ example: 2, description: 'Số đêm' })
-  nights: number;
-
-  @ApiProperty({ example: 1000000, description: 'Tổng tiền phòng' })
-  total_room_price: number;
-
-  @ApiProperty({ type: CustomerInBookingDto })
-  customer: CustomerInBookingDto;
-
-  @ApiProperty({ type: [RoomInBookingDto] })
-  rooms: RoomInBookingDto[];
-
-  @ApiPropertyOptional({ type: InvoiceInBookingDto })
-  invoice: InvoiceInBookingDto | null;
-
-  @ApiProperty({ example: '2026-05-12T00:00:00.000Z' })
-  created_at: Date;
-
-  @ApiProperty({ example: '2026-05-12T00:00:00.000Z' })
-  updated_at: Date;
+  @ApiProperty() created_at: Date;
 }
 
 export class PaginatedBookingResponseDto {
-  @ApiProperty({ type: [BookingResponseDto] })
-  data: BookingResponseDto[];
+  @ApiProperty({ type: [BookingListItemDto] }) data: BookingListItemDto[];
+  @ApiProperty() total: number;
+  @ApiProperty() page: number;
+  @ApiProperty() limit: number;
+  @ApiProperty() totalPages: number;
+}
 
-  @ApiProperty({ example: 100 })
-  total: number;
+/* ============================================================
+ *  CHI TIẾT
+ * ============================================================ */
 
-  @ApiProperty({ example: 1 })
-  page: number;
+export class BookingServiceItemDto {
+  @ApiProperty() id: string;
+  @ApiProperty({ example: 'Giặt ủi' }) name: string;
+  @ApiProperty() quantity: number;
+  @ApiProperty() unit_price: number;
+  @ApiProperty() total_price: number;
+  @ApiProperty() used_at: Date;
+  @ApiProperty({ nullable: true }) note: string | null;
+}
 
-  @ApiProperty({ example: 10 })
-  limit: number;
+export class BookingPaymentDto {
+  @ApiProperty() id: string;
+  @ApiProperty() amount: number;
+  @ApiProperty({ enum: PaymentMethod }) payment_method: PaymentMethod;
+  @ApiProperty({ nullable: true }) reference_number: string | null;
+  @ApiProperty() paid_at: Date;
+  @ApiProperty({
+    nullable: true,
+    description: 'Tên nhân viên thu. Khách xem thì luôn null',
+  })
+  received_by: string | null;
+}
 
-  @ApiProperty({ example: 10 })
-  totalPages: number;
+export class BookingInvoiceDto {
+  @ApiProperty() id: string;
+  @ApiProperty({ enum: InvoiceStatus }) status: InvoiceStatus;
+  @ApiProperty() total_amount: number;
+  @ApiProperty() discount: number;
+  @ApiProperty() final_amount: number;
+  @ApiProperty() paid_amount: number;
+  @ApiProperty({ type: [BookingPaymentDto] }) payments: BookingPaymentDto[];
+}
+
+export const TIMELINE_EVENTS = [
+  'created',
+  'confirmed',
+  'checked_in',
+  'checked_out',
+  'rejected',
+  'cancelled',
+  'no_show',
+] as const;
+export type TimelineEvent = (typeof TIMELINE_EVENTS)[number];
+
+export class BookingTimelineDto {
+  @ApiProperty({ enum: TIMELINE_EVENTS }) event: TimelineEvent;
+  @ApiProperty() at: Date;
+  @ApiProperty({
+    nullable: true,
+    example: 'Lê Thu Lan',
+    description:
+      'Người thực hiện. null = hệ thống / khách tự làm, hoặc khách đang xem',
+  })
+  by: string | null;
+  @ApiPropertyOptional({ description: 'Lý do huỷ / từ chối' }) reason?: string;
+}
+
+export class BookingDetailDto extends BookingListItemDto {
+  @ApiProperty({ nullable: true }) note: string | null;
+
+  @ApiProperty({
+    description: 'Đã có số giấy tờ chưa. Bước nhận phòng bắt buộc phải có',
+  })
+  customer_has_id_card: boolean;
+
+  @ApiProperty({ example: 1400000 }) room_total: number;
+  @ApiProperty({ example: 450000 }) service_total: number;
+
+  @ApiProperty({ type: [BookingServiceItemDto] })
+  services: BookingServiceItemDto[];
+  @ApiProperty({ type: BookingInvoiceDto, nullable: true })
+  invoice: BookingInvoiceDto | null;
+  @ApiProperty({ type: [BookingTimelineDto] }) timeline: BookingTimelineDto[];
+
+  @ApiProperty({
+    enum: BOOKING_ACTIONS,
+    isArray: true,
+    description:
+      'Nút được phép bấm với người đang xem, vào hôm nay. FE chỉ việc hiện theo danh sách này',
+  })
+  allowed_actions: BookingAction[];
+
+  @ApiProperty() updated_at: Date;
+}
+
+/* ============================================================
+ *  BÁO GIÁ & THỐNG KÊ
+ * ============================================================ */
+
+export class BookingQuoteDto {
+  @ApiProperty({ type: BookingRoomDto }) room: BookingRoomDto;
+  @ApiProperty() check_in_date: string;
+  @ApiProperty() check_out_date: string;
+  @ApiProperty() nights: number;
+  @ApiProperty() price_per_night: number;
+  @ApiProperty() room_total: number;
+  @ApiProperty({
+    description: 'false = đã có booking khác giữ phòng trong khoảng này',
+  })
+  available: boolean;
+}
+
+export class BookingStatsDto {
+  @ApiProperty({ description: 'Yêu cầu online chờ duyệt' }) pending: number;
+  @ApiProperty({ description: 'Tab "Đến": confirmed có ngày nhận <= hôm nay' })
+  arrivals: number;
+  @ApiProperty({ description: 'Trong số đó, lẽ ra đến từ hôm trước' })
+  arrivals_overdue: number;
+  @ApiProperty({ description: 'Đang ở' }) in_house: number;
+  @ApiProperty({ description: 'Tab "Đi": đang ở có ngày trả <= hôm nay' })
+  departures: number;
+  @ApiProperty({ description: 'Trong số đó, đã quá ngày trả' })
+  departures_overdue: number;
+  @ApiProperty({ description: 'confirmed có ngày nhận > hôm nay' })
+  upcoming: number;
+  @ApiProperty({
+    example: 42.5,
+    description: '% phòng đang có khách / phòng đang kinh doanh',
+  })
+  occupancy_rate: number;
 }
