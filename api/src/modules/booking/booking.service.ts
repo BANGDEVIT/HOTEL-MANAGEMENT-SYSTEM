@@ -5,306 +5,406 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { BookingStatus, BookingType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateBookingDto } from './dto/create-booking.dto';
-import { UpdateBookingDto } from './dto/update-booking.dto';
-
+import { RedisService } from '../../common/redis/redis.service';
 import {
-  BookingResponseDto,
+  allowedActions,
+  bookingCode,
+  HOLDING_STATUSES,
+  MAX_PENDING_PER_CUSTOMER,
+  nightsBetween,
+  quoteStay,
+  type StayRange,
+  toDate,
+  todayYmd,
+  toYmd,
+  validateDates,
+  validateGuests,
+} from './booking.rules';
+import { CreateBookingDto, CreateMyBookingDto } from './dto/create-booking.dto';
+import { QuoteBookingDto } from './dto/quote-booking.dto';
+import { type BookingTab, QueryBookingDto } from './dto/quey-booking.dto';
+import {
+  BookingDetailDto,
+  BookingListItemDto,
+  BookingQuoteDto,
+  BookingRoomDto,
+  BookingStatsDto,
+  BookingTimelineDto,
   PaginatedBookingResponseDto,
 } from './dto/booking-response.dto';
-import { Prisma } from '@prisma/client';
-import { QueryBookingDto } from './dto/quey-booking.dto';
-import { S3Service } from '../../common/s3/s3.service';
-import { MailService } from '../../common/mail/mail.service';
+
+/* ============================================================
+ *  SELECT dùng chung. `satisfies` giữ kiểu literal -> Prisma suy ra đúng kiểu kết quả
+ * ============================================================ */
+
+const NAME = { select: { first_name: true, last_name: true } } as const;
+
+const LIST_SELECT = {
+  id: true,
+  code: true,
+  status: true,
+  booking_type: true,
+  check_in_date: true,
+  check_out_date: true,
+  adults: true,
+  children: true,
+  created_at: true,
+  customer: {
+    select: {
+      id: true,
+      first_name: true,
+      last_name: true,
+      phone: true,
+      account_id: true,
+    },
+  },
+  // UI chốt 1 booking = 1 phòng -> chỉ lấy phòng đầu tiên
+  booking_rooms: {
+    take: 1,
+    select: {
+      price_per_night: true,
+      room: {
+        select: {
+          id: true,
+          room_number: true,
+          floor: true,
+          room_type: { select: { name: true, capacity: true } },
+        },
+      },
+    },
+  },
+  invoices: { select: { final_amount: true } },
+} satisfies Prisma.BookingSelect;
+
+const DETAIL_SELECT = {
+  ...LIST_SELECT,
+  note: true,
+  updated_at: true,
+  created_by: true,
+  confirmed_at: true,
+  actual_check_in: true,
+  actual_check_out: true,
+  cancelled_at: true,
+  cancel_reason: true,
+  customer: {
+    select: { ...LIST_SELECT.customer.select, id_card: true },
+  },
+  creator: NAME,
+  confirmer: NAME,
+  check_in_staff: NAME,
+  check_out_staff: NAME,
+  // Người huỷ là Account: có thể là nhân viên hoặc chính khách
+  canceller: { select: { employee: NAME, customer: NAME } },
+  booking_services: {
+    orderBy: { used_at: 'asc' },
+    select: {
+      id: true,
+      quantity: true,
+      unit_price: true,
+      total_price: true,
+      used_at: true,
+      note: true,
+      service: { select: { name: true } },
+    },
+  },
+  invoices: {
+    select: {
+      id: true,
+      status: true,
+      total_amount: true,
+      discount: true,
+      final_amount: true,
+      payments: {
+        orderBy: { paid_at: 'asc' },
+        select: {
+          id: true,
+          amount: true,
+          payment_method: true,
+          reference_number: true,
+          paid_at: true,
+          receiver: NAME,
+        },
+      },
+    },
+  },
+} satisfies Prisma.BookingSelect;
+
+type ListRow = Prisma.BookingGetPayload<{ select: typeof LIST_SELECT }>;
+type DetailRow = Prisma.BookingGetPayload<{ select: typeof DETAIL_SELECT }>;
+type Db = Prisma.TransactionClient;
+
+const ROOM_FOR_BOOKING = {
+  id: true,
+  room_number: true,
+  floor: true,
+  status: true,
+  room_type: {
+    select: { name: true, capacity: true, base_price: true, is_active: true },
+  },
+} satisfies Prisma.RoomSelect;
+
+const fullName = (
+  p: { first_name: string; last_name: string } | null | undefined,
+) => (p ? `${p.last_name} ${p.first_name}`.trim() : null);
+
+/** Tham số chung cho 2 đường tạo booking (nhân viên / khách) */
+interface NewBooking {
+  customerId: string;
+  dto: CreateMyBookingDto;
+  type: BookingType;
+  status: Extract<BookingStatus, 'pending' | 'confirmed'>;
+  employeeId: string | null;
+  /** Nhân viên được biết booking nào đang chiếm phòng, khách thì không */
+  revealConflict: boolean;
+}
 
 @Injectable()
 export class BookingService {
   constructor(
-    private prisma: PrismaService,
-    private s3Service: S3Service,
-    private mailService: MailService,
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
   ) {}
 
-  // ==================== CREATE ====================
-  async create(
-    dto: CreateBookingDto,
-    accountId: string,
-    roles: string[],
-  ): Promise<BookingResponseDto> {
-    const {
-      customer_id,
-      room_ids,
-      check_in_date,
-      check_out_date,
-      booking_type,
-      // special_requests,
-      override_prices,
-    } = dto;
+  /* ============================================================
+   *  BÁO GIÁ: kiểm tra trước khi đặt, không ghi gì vào DB
+   * ============================================================ */
 
-    let finalCustomerId: string;
-    if (roles.includes('customer')) {
-      const customer = await this.prisma.customer.findUnique({
-        where: { account_id: accountId },
-        select: { id: true },
-      });
-      if (!customer) {
-        throw new ForbiddenException('Không tìm thấy thông tin khách hàng');
-      }
-      finalCustomerId = customer.id;
-    } else {
-      // Staff/manager/admin: dùng customer_id từ DTO, phải tồn tại
-      const customerExists = await this.prisma.customer.findUnique({
-        where: { id: customer_id },
-      });
-      if (!customerExists) {
-        throw new NotFoundException('Không tìm thấy khách hàng');
-      }
-      finalCustomerId = customer_id;
-    }
+  async quote(dto: QuoteBookingDto): Promise<BookingQuoteDto> {
+    const range = { checkIn: dto.check_in_date, checkOut: dto.check_out_date };
+    this.assertDates(range);
 
-    const customer = await this.prisma.customer.findUnique({
-      where: { id: finalCustomerId },
-    });
+    const room = await this.loadBookableRoom(this.prisma, dto.room_id);
+    this.assertGuests(dto, room.room_type.capacity);
 
-    if (!customer?.phone) {
-      throw new BadRequestException(
-        'Khách hàng chưa có số điện thoại. Vui lòng cập nhật trước khi đặt phòng.',
-      );
-    }
+    const conflict = await this.findConflictInDb(
+      this.prisma,
+      dto.room_id,
+      range,
+    );
+    const price = Number(room.room_type.base_price);
 
-    // Tìm employee từ accountId
-    let employeeId: string | undefined = undefined;
-
-    const employee = await this.prisma.employee.findUnique({
-      where: { account_id: accountId },
-    });
-
-    if (employee) {
-      employeeId = employee.id;
-    }
-
-    // 1. Check ngày hợp lệ
-    const checkIn = new Date(check_in_date);
-    const checkOut = new Date(check_out_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (checkIn >= checkOut) {
-      throw new BadRequestException('Ngày check-out phải sau ngày check-in');
-    }
-
-    if (checkIn < today) {
-      throw new BadRequestException(
-        'Ngày check-in không được là ngày trong quá khứ',
-      );
-    }
-
-    // 2. Check customer tồn tại
-    // const customer = await this.prisma.customer.findUnique({
-    //   where: { id: customer_id },
-    // });
-
-    // if (!customer) {
-    //   throw new NotFoundException('Không tìm thấy khách hàng');
-    // }
-
-    // 3. Check phòng tồn tại
-    const rooms = await this.prisma.room.findMany({
-      where: { id: { in: room_ids } },
-      include: {
-        room_type: {
-          select: {
-            id: true,
-            name: true,
-            base_price: true,
-          },
-        },
-      },
-    });
-
-    if (rooms.length !== room_ids.length) {
-      const foundIds = rooms.map((r) => r.id);
-      const notFoundIds = room_ids.filter((id) => !foundIds.includes(id));
-      throw new NotFoundException(
-        `Không tìm thấy phòng với id: ${notFoundIds.join(', ')}`,
-      );
-    }
-
-    // Check phòng inactive
-    const inactiveRooms = rooms.filter((r) => r.status === 'inactive');
-    if (inactiveRooms.length > 0) {
-      throw new BadRequestException(
-        `Phòng ${inactiveRooms.map((r) => r.room_number).join(', ')} đã bị vô hiệu hóa`,
-      );
-    }
-
-    // 4. Check phòng trống trong khoảng thời gian
-    const overlappingBookings = await this.prisma.bookingRoom.findMany({
-      where: {
-        room_id: { in: room_ids },
-        booking: {
-          status: { notIn: ['cancelled', 'checked_out'] },
-          check_in_date: { lt: checkOut },
-          check_out_date: { gt: checkIn },
-        },
-      },
-      include: {
-        room: { select: { room_number: true } },
-      },
-    });
-
-    if (overlappingBookings.length > 0) {
-      const occupiedRooms = [
-        ...new Set(overlappingBookings.map((b) => b.room.room_number)),
-      ].join(', ');
-      throw new ConflictException(
-        `Phòng ${occupiedRooms} đã được đặt trong khoảng thời gian này`,
-      );
-    }
-
-    // 5. Validate override_prices
-    if (override_prices) {
-      for (const [roomId, price] of Object.entries(override_prices)) {
-        if (!room_ids.includes(roomId)) {
-          throw new BadRequestException(
-            `room_id ${roomId} trong override_prices không có trong danh sách phòng`,
-          );
-        }
-        if (price <= 0) {
-          throw new BadRequestException('Giá phòng phải lớn hơn 0');
-        }
-      }
-    }
-
-    // 6. Tạo booking trong transaction
-    const booking = await this.prisma.$transaction(async (tx) => {
-      const isWalkIn = booking_type === 'walk_in';
-      const newBooking = await tx.booking.create({
-        data: {
-          customer_id: finalCustomerId,
-          created_by: employeeId,
-          booking_type,
-          check_in_date: checkIn,
-          check_out_date: checkOut,
-          status: isWalkIn ? 'confirmed' : 'pending',
-          // special_requests,
-        },
-      });
-
-      // Tạo booking room
-
-      await tx.bookingRoom.createMany({
-        data: rooms.map((room) => ({
-          booking_id: newBooking.id,
-          room_id: room.id,
-          price_per_night:
-            override_prices?.[room.id] ?? Number(room.room_type.base_price),
-        })),
-      });
-
-      // Sau khi tạo booking và booking_rooms, nếu là walk-in thì tạo invoice luôn
-      if (isWalkIn) {
-        const nights = Math.ceil(
-          (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24),
-        );
-        const totalRoomPrice = rooms.reduce((sum, room) => {
-          const pricePerNight =
-            override_prices?.[room.id] ?? Number(room.room_type.base_price);
-          return sum + pricePerNight * nights;
-        }, 0);
-        // (Có thể tính cả dịch vụ nếu có, nhưng booking mới thì chưa có)
-        await tx.invoice.create({
-          data: {
-            booking_id: newBooking.id,
-            total_amount: totalRoomPrice,
-            discount: 0,
-            final_amount: totalRoomPrice,
-            status: 'unpaid',
-          },
-        });
-      }
-
-      return newBooking;
-    });
-
-    // Online → confirm() gọi ngoài transaction (booking đã tồn tại trong DB)
-    // if (booking_type === 'online') {
-    //   // → Invoice được tạo ngay
-    //   await this.confirm(booking.id); // ← an toàn vì booking đã được commit
-    // }
-
-    return this.findOne(booking.id);
+    return {
+      room: this.toRoomDto(room, price),
+      check_in_date: range.checkIn,
+      check_out_date: range.checkOut,
+      ...quoteStay(price, range.checkIn, range.checkOut),
+      available: !conflict,
+    };
   }
 
-  // ==================== FIND ALL ====================
+  /* ============================================================
+   *  TẠO BOOKING
+   * ============================================================ */
+
+  /** Lễ tân tạo (tại quầy / qua điện thoại) -> xác nhận luôn */
+  async createByStaff(
+    accountId: string,
+    roles: string[],
+    dto: CreateBookingDto,
+  ): Promise<BookingDetailDto> {
+    const employee = await this.employeeByAccount(accountId);
+
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: dto.customer_id },
+      select: { id: true },
+    });
+    if (!customer) throw new NotFoundException('Không tìm thấy khách hàng');
+
+    const id = await this.createBooking({
+      customerId: customer.id,
+      dto,
+      type: 'walk_in',
+      status: 'confirmed',
+      employeeId: employee.id,
+      revealConflict: true,
+    });
+
+    return this.findOne(id, roles);
+  }
+
+  /** Khách tự đặt online -> chờ lễ tân duyệt */
+  async createByCustomer(
+    accountId: string,
+    dto: CreateMyBookingDto,
+  ): Promise<BookingDetailDto> {
+    const customerId = await this.customerIdByAccount(accountId);
+
+    // Chặn giữ chỗ ảo: 1 khách tối đa N yêu cầu đang chờ
+    const pending = await this.prisma.booking.count({
+      where: { customer_id: customerId, status: 'pending' },
+    });
+    if (pending >= MAX_PENDING_PER_CUSTOMER) {
+      throw new BadRequestException(
+        `Bạn đang có ${pending} yêu cầu chờ duyệt. Vui lòng đợi khách sạn xác nhận trước khi đặt thêm`,
+      );
+    }
+
+    const id = await this.createBooking({
+      customerId,
+      dto,
+      type: 'online',
+      status: 'pending',
+      employeeId: null,
+      revealConflict: false,
+    });
+
+    return this.findMyOne(accountId, id);
+  }
+
+  /**
+   * Tạo booking trong 1 transaction có KHOÁ DÒNG PHÒNG.
+   *
+   * Vì sao cần khoá: 2 lễ tân cùng bấm đặt phòng 302 cho cùng ngày.
+   *   Không khoá: cả 2 cùng kiểm tra "phòng trống" -> cả 2 cùng tạo -> trùng lịch.
+   *   Có khoá:    người thứ 2 phải ĐỢI ở câu SELECT ... FOR UPDATE tới khi người 1 commit,
+   *               lúc đó kiểm tra lại thì thấy booking của người 1 -> báo 409.
+   * Khoá chỉ chặn các lượt đặt CÙNG phòng, phòng khác vẫn đặt song song bình thường.
+   */
+  private async createBooking(input: NewBooking): Promise<string> {
+    const { dto } = input;
+    const range = { checkIn: dto.check_in_date, checkOut: dto.check_out_date };
+    this.assertDates(range);
+
+    const created = await this.prisma.$transaction(
+      async (tx) => {
+        // 1. Khoá dòng phòng tới hết transaction
+        await tx.$queryRaw`SELECT id FROM "Room" WHERE id = ${dto.room_id}::uuid FOR UPDATE`;
+
+        // 2. Đọc + kiểm tra phòng SAU khi khoá -> không ai đổi được giữa chừng
+        const room = await this.loadBookableRoom(tx, dto.room_id);
+        this.assertGuests(dto, room.room_type.capacity);
+
+        // 3. Kiểm tra trùng lịch
+        const conflict = await this.findConflictInDb(tx, dto.room_id, range);
+        if (conflict) {
+          throw new ConflictException(
+            input.revealConflict
+              ? `Phòng ${room.room_number} đã có booking ${conflict.code} ` +
+                  `(${toYmd(conflict.check_in_date)} → ${toYmd(conflict.check_out_date)})`
+              : `Phòng ${room.room_number} vừa có người đặt trong khoảng ngày này, vui lòng chọn phòng khác`,
+          );
+        }
+
+        // 4. Lấy số thứ tự. nextval không bị rollback: transaction lỗi thì mã bị nhảy số, không sao
+        const [{ n }] = await tx.$queryRaw<
+          { n: bigint }[]
+        >`SELECT nextval('booking_code_seq') AS n`;
+        const now = new Date();
+        const confirmed = input.status === 'confirmed';
+
+        return tx.booking.create({
+          data: {
+            code: bookingCode(now, n),
+            customer_id: input.customerId,
+            booking_type: input.type,
+            status: input.status,
+            check_in_date: toDate(range.checkIn),
+            check_out_date: toDate(range.checkOut),
+            adults: dto.adults ?? 1,
+            children: dto.children ?? 0,
+            note: dto.note?.trim() || null,
+            created_at: now,
+            created_by: input.employeeId,
+            confirmed_by: confirmed ? input.employeeId : null,
+            confirmed_at: confirmed ? now : null,
+            booking_rooms: {
+              // Chốt giá tại thời điểm đặt: sau này đổi giá loại phòng không ảnh hưởng booking cũ
+              create: {
+                room_id: room.id,
+                price_per_night: room.room_type.base_price,
+              },
+            },
+          },
+          select: { id: true },
+        });
+      },
+      // Neon ở xa, mặc định 5s đôi khi không đủ khi phải đợi khoá
+      { maxWait: 5_000, timeout: 10_000 },
+    );
+
+    // Phòng vừa bị giữ -> kết quả "tìm phòng trống" cũ đã sai
+    await this.redis.delByPattern('rooms:');
+    return created.id;
+  }
+
+  /* ============================================================
+   *  DANH SÁCH (nhân viên)
+   * ============================================================ */
+
   async findAll(query: QueryBookingDto): Promise<PaginatedBookingResponseDto> {
     const {
       page = 1,
-      limit = 10,
+      limit = 20,
+      tab = 'all',
       status,
       booking_type,
-      customer_id,
-      from_date,
-      to_date,
       search,
-      sortBy = 'created_at',
-      order = 'desc',
+      from,
+      to,
+      sort,
+      order,
     } = query;
+    const today = todayYmd();
 
-    const skip = (page - 1) * limit;
-    const where: Prisma.BookingWhereInput = {};
-
-    if (status) where.status = status;
-    if (booking_type) where.booking_type = booking_type;
-    if (customer_id) where.customer_id = customer_id;
-
-    if (from_date && to_date) {
-      where.AND = [
-        { check_in_date: { lt: new Date(to_date) } },
-        { check_out_date: { gt: new Date(from_date) } },
-      ];
-    } else if (from_date) {
-      where.check_out_date = { gt: new Date(from_date) };
-    } else if (to_date) {
-      where.check_in_date = { lt: new Date(to_date) };
+    if (from && to && from >= to) {
+      throw new BadRequestException('"from" phải trước "to"');
     }
 
-    // Search theo tên khách hàng
-    if (search) {
-      where.customer = {
-        OR: [
-          { first_name: { contains: search, mode: 'insensitive' } },
-          { last_name: { contains: search, mode: 'insensitive' } },
-          { phone: { contains: search, mode: 'insensitive' } },
-        ],
-      };
+    const and: Prisma.BookingWhereInput[] = [this.tabWhere(tab, today)];
+
+    if (status?.length) and.push({ status: { in: status } });
+    if (booking_type) and.push({ booking_type });
+
+    // Giao với [from, to): cùng công thức trùng lịch
+    if (from) and.push({ check_out_date: { gt: toDate(from) } });
+    if (to) and.push({ check_in_date: { lt: toDate(to) } });
+
+    if (search?.trim()) {
+      // "BK-2609 302" -> MỖI từ phải khớp ít nhất 1 field
+      for (const token of search.trim().split(/\s+/).slice(0, 5)) {
+        const compact = token.replace(/[\s.\-()]/g, '');
+        and.push({
+          OR: [
+            { code: { contains: token, mode: 'insensitive' } },
+            {
+              customer: {
+                first_name: { contains: token, mode: 'insensitive' },
+              },
+            },
+            {
+              customer: { last_name: { contains: token, mode: 'insensitive' } },
+            },
+            ...(compact
+              ? [{ customer: { phone: { contains: compact } } }]
+              : []),
+            {
+              booking_rooms: {
+                some: { room: { room_number: { contains: token } } },
+              },
+            },
+          ],
+        });
+      }
     }
 
-    const validSortFields = [
-      'created_at',
-      'check_in_date',
-      'check_out_date',
-      'status',
-    ];
-    const orderBy: Prisma.BookingOrderByWithRelationInput =
-      validSortFields.includes(sortBy)
-        ? { [sortBy]: order }
-        : { created_at: 'desc' };
+    const where: Prisma.BookingWhereInput = { AND: and };
+    const orderBy = this.orderFor(tab, sort, order);
 
-    const [bookingsRaw, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.booking.findMany({
         where,
-        skip,
-        take: limit,
         orderBy,
-        select: this.bookingSelect(),
+        skip: (page - 1) * limit,
+        take: limit,
+        select: LIST_SELECT,
       }),
       this.prisma.booking.count({ where }),
     ]);
 
     return {
-      data: bookingsRaw.map((b) => this.transformBooking(b)),
+      data: rows.map((r) => this.toListItem(r, today)),
       total,
       page,
       limit,
@@ -312,622 +412,424 @@ export class BookingService {
     };
   }
 
-  // ==================== FIND ONE ====================
-  async findOne(id: string): Promise<BookingResponseDto> {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id },
-      select: this.bookingSelect(),
-    });
-
-    if (!booking) {
-      throw new NotFoundException('Không tìm thấy booking');
+  /**
+   * Điều kiện của từng tab. Thống kê (getStats) dùng CHÍNH hàm này
+   * -> số trên tab luôn khớp số dòng khi bấm vào tab.
+   */
+  private tabWhere(tab: BookingTab, today: string): Prisma.BookingWhereInput {
+    const t = toDate(today);
+    switch (tab) {
+      case 'pending':
+        return { status: 'pending' };
+      case 'arrivals':
+        return { status: 'confirmed', check_in_date: { lte: t } };
+      case 'in_house':
+        return { status: 'checked_in' };
+      case 'departures':
+        return { status: 'checked_in', check_out_date: { lte: t } };
+      case 'upcoming':
+        return { status: 'confirmed', check_in_date: { gt: t } };
+      case 'history':
+        return { status: { in: ['checked_out', 'cancelled', 'no_show'] } };
+      default:
+        return {};
     }
-
-    return this.transformBooking(booking);
   }
 
-  // ==================== MY BOOKINGS ====================
-  async getMyBookings(
+  /** Mỗi tab có thứ tự mặc định hợp lý nhất cho việc cần làm. Luôn thêm id để phân trang ổn định */
+  private orderFor(
+    tab: BookingTab,
+    sort?: QueryBookingDto['sort'],
+    order?: 'asc' | 'desc',
+  ): Prisma.BookingOrderByWithRelationInput[] {
+    const defaults: Record<
+      BookingTab,
+      [NonNullable<QueryBookingDto['sort']>, 'asc' | 'desc']
+    > = {
+      pending: ['created_at', 'asc'], // ai gửi trước duyệt trước
+      arrivals: ['check_in_date', 'asc'], // khách trễ lên đầu
+      in_house: ['check_out_date', 'asc'], // sắp đi lên đầu
+      departures: ['check_out_date', 'asc'],
+      upcoming: ['check_in_date', 'asc'],
+      history: ['check_out_date', 'desc'],
+      all: ['created_at', 'desc'],
+    };
+    const [field, dir] = defaults[tab];
+    return [{ [sort ?? field]: order ?? dir }, { id: 'asc' }];
+  }
+
+  /* ============================================================
+   *  THỐNG KÊ (số trên các tab + công suất phòng)
+   * ============================================================ */
+
+  async getStats(): Promise<BookingStatsDto> {
+    const today = todayYmd();
+    const t = toDate(today);
+    const count = (where: Prisma.BookingWhereInput) =>
+      this.prisma.booking.count({ where });
+
+    const [
+      pending,
+      arrivals,
+      arrivalsOverdue,
+      inHouse,
+      departures,
+      departuresOverdue,
+      upcoming,
+      occupiedRooms,
+      sellableRooms,
+    ] = await Promise.all([
+      count(this.tabWhere('pending', today)),
+      count(this.tabWhere('arrivals', today)),
+      count({ status: 'confirmed', check_in_date: { lt: t } }),
+      count(this.tabWhere('in_house', today)),
+      count(this.tabWhere('departures', today)),
+      count({ status: 'checked_in', check_out_date: { lt: t } }),
+      count(this.tabWhere('upcoming', today)),
+      this.prisma.bookingRoom.count({
+        where: { booking: { status: 'checked_in' } },
+      }),
+      // Phòng đang kinh doanh: bỏ phòng đã ẩn và đang bảo trì
+      this.prisma.room.count({
+        where: { status: { notIn: ['inactive', 'maintenance'] } },
+      }),
+    ]);
+
+    return {
+      pending,
+      arrivals,
+      arrivals_overdue: arrivalsOverdue,
+      in_house: inHouse,
+      departures,
+      departures_overdue: departuresOverdue,
+      upcoming,
+      occupancy_rate: sellableRooms
+        ? Math.round((occupiedRooms / sellableRooms) * 1000) / 10
+        : 0,
+    };
+  }
+
+  /* ============================================================
+   *  CHI TIẾT
+   * ============================================================ */
+
+  async findOne(id: string, roles: string[]): Promise<BookingDetailDto> {
+    const row = await this.prisma.booking.findUnique({
+      where: { id },
+      select: DETAIL_SELECT,
+    });
+    if (!row) throw new NotFoundException('Không tìm thấy booking');
+    return this.toDetail(row, roles, false);
+  }
+
+  /* ============================================================
+   *  KHÁCH XEM BOOKING CỦA MÌNH
+   * ============================================================ */
+
+  async findMine(
     accountId: string,
-    query: QueryBookingDto,
+    page = 1,
+    limit = 10,
   ): Promise<PaginatedBookingResponseDto> {
-    const customer = await this.prisma.customer.findUnique({
-      where: { account_id: accountId },
-    });
+    const customerId = await this.customerIdByAccount(accountId);
+    const where: Prisma.BookingWhereInput = { customer_id: customerId };
 
-    if (!customer) {
-      throw new NotFoundException('Không tìm thấy khách hàng');
-    }
+    const [rows, total] = await Promise.all([
+      this.prisma.booking.findMany({
+        where,
+        orderBy: [{ check_in_date: 'desc' }, { id: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+        select: LIST_SELECT,
+      }),
+      this.prisma.booking.count({ where }),
+    ]);
 
-    return this.findAll({ ...query, customer_id: customer.id });
+    const today = todayYmd();
+    return {
+      data: rows.map((r) => this.toListItem(r, today)),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
-  // ==================== UPDATE ====================
-  async update(id: string, dto: UpdateBookingDto): Promise<BookingResponseDto> {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id },
+  async findMyOne(accountId: string, id: string): Promise<BookingDetailDto> {
+    const customerId = await this.customerIdByAccount(accountId);
+    // Lọc luôn theo customer_id: booking của người khác trả 404 như không tồn tại,
+    // không trả 403 (403 = xác nhận là có booking đó)
+    const row = await this.prisma.booking.findFirst({
+      where: { id, customer_id: customerId },
+      select: DETAIL_SELECT,
     });
-
-    if (!booking) {
-      throw new NotFoundException('Không tìm thấy booking');
-    }
-
-    if (booking.status !== 'pending') {
-      throw new BadRequestException(
-        'Chỉ có thể cập nhật booking ở trạng thái pending',
-      );
-    }
-
-    const { check_in_date, check_out_date } = dto;
-
-    if (check_in_date || check_out_date) {
-      const checkIn = new Date(check_in_date ?? booking.check_in_date);
-      const checkOut = new Date(check_out_date ?? booking.check_out_date);
-
-      if (checkIn >= checkOut) {
-        throw new BadRequestException('Ngày check-out phải sau ngày check-in');
-      }
-
-      // Lấy danh sách room_id của booking hiện tại
-      const bookingRooms = await this.prisma.bookingRoom.findMany({
-        where: { booking_id: id },
-        select: { room_id: true },
-      });
-      const roomIds = bookingRooms.map((br) => br.room_id);
-
-      // Kiểm tra xem với ngày mới có bị trùng với booking nào khác không
-      const overlapping = await this.prisma.bookingRoom.findFirst({
-        where: {
-          room_id: { in: roomIds },
-          booking_id: { not: id },
-          booking: {
-            status: { notIn: ['cancelled', 'checked_out'] },
-            check_in_date: { lt: checkOut },
-            check_out_date: { gt: checkIn },
-          },
-        },
-      });
-
-      if (overlapping) {
-        throw new ConflictException(
-          'Phòng đã được đặt trong khoảng thời gian mới, không thể cập nhật ngày',
-        );
-      }
-    }
-
-    await this.prisma.booking.update({
-      where: { id },
-      data: {
-        ...(check_in_date && { check_in_date: new Date(check_in_date) }), // ...undefine se ko hien
-        ...(check_out_date && { check_out_date: new Date(check_out_date) }),
-        // ...(special_requests !== undefined && { special_requests }),
-      },
-    });
-
-    return this.findOne(id);
+    if (!row) throw new NotFoundException('Không tìm thấy booking');
+    return this.toDetail(row, ['customer'], true);
   }
 
-  // ==================== CONFIRM ====================
-  async confirm(id: string): Promise<BookingResponseDto> {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id },
-      include: {
-        booking_rooms: true,
-        booking_services: true,
-      },
-    });
+  /* ============================================================
+   *  HELPER KIỂM TRA
+   * ============================================================ */
 
-    if (!booking) {
-      throw new NotFoundException('Không tìm thấy booking');
-    }
-
-    if (booking.status !== 'pending') {
-      throw new BadRequestException(
-        'Chỉ có thể confirm booking ở trạng thái pending',
-      );
-    }
-
-    // Re-check phòng trống
-    const overlapping = await this.prisma.bookingRoom.findFirst({
-      where: {
-        room_id: { in: booking.booking_rooms.map((br) => br.room_id) },
-        booking_id: { not: id },
-        booking: {
-          status: { notIn: ['cancelled', 'checked_out'] }, // ← fix
-          check_in_date: { lt: booking.check_out_date },
-          check_out_date: { gt: booking.check_in_date },
-        },
-      },
-    });
-
-    if (overlapping) {
-      throw new ConflictException(
-        'Có phòng đã được đặt trong khoảng thời gian này',
-      );
-    }
-
-    // Tính số đêm
-    const nights = Math.ceil(
-      (booking.check_out_date.getTime() - booking.check_in_date.getTime()) /
-        (1000 * 60 * 60 * 24),
-    );
-
-    // Tính tổng tiền phòng
-    const totalRoomPrice = booking.booking_rooms.reduce(
-      (sum, br) => sum + Number(br.price_per_night) * nights,
-      0,
-    );
-
-    // Tính tổng tiền dịch vụ
-    const totalServicePrice = booking.booking_services.reduce(
-      (sum, bs) => sum + Number(bs.total_price),
-      0,
-    );
-
-    const totalAmount = totalRoomPrice + totalServicePrice;
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.booking.update({
-        where: { id },
-        data: { status: 'confirmed' },
-      });
-
-      await tx.invoice.create({
-        data: {
-          booking_id: id,
-          total_amount: totalAmount,
-          discount: 0,
-          final_amount: totalAmount,
-          status: 'unpaid',
-        },
-      });
-    });
-
-    const result = await this.findOne(id);
-
-    const customerEmail =
-      result.customer.email ??
-      (
-        await this.prisma.customer.findUnique({
-          where: { id: result.customer.id },
-          include: { account: true },
-        })
-      )?.account?.email;
-
-    if (customerEmail) {
-      this.mailService
-        .sendBookingConfirmed(customerEmail, {
-          customerName: result.customer.full_name,
-          bookingId: result.id,
-          checkInDate: new Date(result.check_in_date).toLocaleDateString(
-            'vi-VN',
-          ),
-          checkOutDate: new Date(result.check_out_date).toLocaleDateString(
-            'vi-VN',
-          ),
-          nights: result.nights,
-          rooms: result.rooms.map((r) => ({
-            roomNumber: r.room_number,
-            roomType: r.room_type_name,
-            // pricePerNight: r.price_per_night.toLocaleString('vi-VN'),
-            pricePerNight: r.price_per_night,
-          })),
-          // totalAmount: result.total_room_price.toLocaleString('vi-VN'),
-          totalAmount: result.total_room_price,
-          // specialRequests: result.special_requests ?? undefined,
-          hotelName: process.env.HOTEL_NAME,
-          hotelPhone: process.env.HOTEL_PHONE,
-          hotelAddress: process.env.HOTEL_ADDRESS,
-        })
-        .catch(() => {});
-    }
-
-    return result;
+  private assertDates(range: StayRange) {
+    const err = validateDates(range, todayYmd());
+    if (err) throw new BadRequestException(err);
   }
 
-  // ==================== CHECK-IN ====================
-  async checkIn(
-    id: string,
-    accountId: string,
-    files?: {
-      front_image?: Express.Multer.File[];
-      back_image?: Express.Multer.File[];
-    },
-  ): Promise<BookingResponseDto> {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id },
-      include: { customer: true },
-    });
-
-    if (!booking) {
-      throw new NotFoundException('Không tìm thấy booking');
-    }
-
-    if (booking.status !== 'confirmed') {
-      throw new BadRequestException(
-        'Chỉ có thể check-in booking đã được confirm',
-      );
-    }
-
-    let customer = booking.customer;
-    let frontUrl = customer.id_card_img_url;
-    let backUrl = customer.id_card_img_back_url;
-
-    // Xử lý upload ảnh nếu có file và chưa có ảnh
-    if (files?.front_image?.[0] && !frontUrl) {
-      frontUrl = await this.s3Service.uploadFile(
-        files.front_image[0],
-        'customers/id-cards',
-      );
-    }
-    if (files?.back_image?.[0] && !backUrl) {
-      backUrl = await this.s3Service.uploadFile(
-        files.back_image[0],
-        'customers/id-cards',
-      );
-    }
-
-    // Cập nhật customer nếu có ảnh mới
-    if (
-      (frontUrl && frontUrl !== customer.id_card_img_url) ||
-      (backUrl && backUrl !== customer.id_card_img_back_url)
-    ) {
-      customer = await this.prisma.customer.update({
-        where: { id: customer.id },
-        data: {
-          ...(frontUrl && { id_card_img_url: frontUrl }),
-          ...(backUrl && { id_card_img_back_url: backUrl }),
-        },
-      });
-    }
-
-    // Sau khi cập nhật, kiểm tra lại điều kiện bắt buộc
-    if (!customer.id_card_img_url || !customer.id_card_img_back_url) {
-      throw new BadRequestException(
-        'Cần cung cấp ảnh CCCD mặt trước và mặt sau để check-in',
-      );
-    }
-
-    // ← Fix 7: Kiểm tra ngày check-in
-    const now = new Date();
-    const checkOutDate = new Date(booking.check_out_date);
-    const checkInDate = new Date(booking.check_in_date);
-
-    // Cho phép check-in sớm 1 ngày
-    const earliestCheckIn = new Date(checkInDate);
-    earliestCheckIn.setDate(earliestCheckIn.getDate() - 1);
-
-    if (now < earliestCheckIn) {
-      throw new BadRequestException(
-        `Chưa đến ngày check-in (${checkInDate.toLocaleDateString('vi-VN')})`,
-      );
-    }
-
-    if (now >= checkOutDate) {
-      throw new BadRequestException(
-        'Đã quá ngày check-out, không thể check-in',
-      );
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.booking.update({
-        where: { id },
-        data: {
-          status: 'checked_in',
-          actual_check_in: now,
-        },
-      });
-
-      const bookingRooms = await tx.bookingRoom.findMany({
-        where: { booking_id: id },
-        select: { room_id: true },
-      });
-
-      const roomIds = bookingRooms.map((br) => br.room_id);
-
-      await tx.room.updateMany({
-        where: { id: { in: roomIds } },
-        data: { status: 'occupied' },
-      });
-
-      // ← Fix 5: Ghi RoomStatusHistory
-      await this.createRoomStatusHistory(
-        tx,
-        roomIds,
-        'available',
-        'occupied',
-        accountId,
-      );
-    });
-
-    return this.findOne(id);
-  }
-  // ==================== CHECK-OUT ====================
-  async checkOut(id: string, accountId: string): Promise<BookingResponseDto> {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id },
-      include: { invoices: true },
-    });
-
-    if (!booking) {
-      throw new NotFoundException('Không tìm thấy booking');
-    }
-
-    if (booking.status !== 'checked_in') {
-      throw new BadRequestException(
-        'Chỉ có thể check-out booking đang checked_in',
-      );
-    }
-
-    // Check invoice đã thanh toán chưa
-    const invoice = booking.invoices[0];
-    if (invoice && invoice.status !== 'paid') {
-      throw new BadRequestException(
-        'Vui lòng thanh toán hóa đơn trước khi check-out',
-      );
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      const now = new Date();
-
-      await tx.booking.update({
-        where: { id },
-        data: {
-          status: 'checked_out',
-          actual_check_out: now,
-          // check_out_date: now, // ← cập nhật ngày dự kiến = ngày thực tế
-        },
-      });
-
-      const bookingRooms = await tx.bookingRoom.findMany({
-        where: { booking_id: id },
-        select: { room_id: true },
-      });
-
-      const roomIds = bookingRooms.map((br) => br.room_id);
-
-      await tx.room.updateMany({
-        where: { id: { in: roomIds } },
-        data: { status: 'cleaning' },
-      });
-
-      // ← Fix 5: Ghi RoomStatusHistory
-      await this.createRoomStatusHistory(
-        tx,
-        roomIds,
-        'occupied',
-        'cleaning',
-        accountId,
-      );
-    });
-
-    return this.findOne(id);
-  }
-
-  // ==================== CANCEL ====================
-  async cancel(id: string, accountId: string): Promise<BookingResponseDto> {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id },
-      include: { customer: true },
-    });
-
-    if (!booking) {
-      throw new NotFoundException('Không tìm thấy booking');
-    }
-
-    if (!['pending', 'confirmed'].includes(booking.status)) {
-      throw new BadRequestException(
-        'Chỉ có thể hủy booking ở trạng thái pending hoặc confirmed',
-      );
-    }
-
-    // Customer chỉ hủy booking của mình
-    const customer = await this.prisma.customer.findUnique({
-      where: { account_id: accountId },
-    });
-
-    if (customer && booking.customer_id !== customer.id) {
-      throw new ForbiddenException('Bạn không có quyền hủy booking này');
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.booking.update({
-        where: { id },
-        data: { status: 'cancelled' },
-      });
-
-      // Hủy invoice nếu có
-      await tx.invoice.updateMany({
-        where: { booking_id: id },
-        data: { status: 'unpaid' },
-      });
-
-      const bookingRooms = await tx.bookingRoom.findMany({
-        where: { booking_id: id },
-        select: { room_id: true },
-      });
-
-      const roomIds = bookingRooms.map((br) => br.room_id);
-
-      // Chỉ đổi phòng nếu đang occupied
-      const occupiedRooms = await tx.room.findMany({
-        where: {
-          id: { in: roomIds },
-          status: 'occupied',
-        },
-        select: { id: true },
-      });
-
-      if (occupiedRooms.length > 0) {
-        const occupiedIds = occupiedRooms.map((r) => r.id);
-
-        await tx.room.updateMany({
-          where: { id: { in: occupiedIds } },
-          data: { status: 'available' },
-        });
-
-        // ← Fix 5: Ghi RoomStatusHistory
-        await this.createRoomStatusHistory(
-          tx,
-          occupiedIds,
-          'occupied',
-          'available',
-          accountId,
-        );
-      }
-    });
-
-    return this.findOne(id);
-  }
-
-  // ==================== HELPERS ====================
-  private async createRoomStatusHistory(
-    tx: any,
-    roomIds: string[],
-    oldStatus: string,
-    newStatus: string,
-    accountId: string,
+  private assertGuests(
+    dto: { adults?: number; children?: number },
+    capacity: number,
   ) {
-    await tx.roomStatusHistory.createMany({
-      data: roomIds.map((roomId) => ({
+    const err = validateGuests(
+      { adults: dto.adults ?? 1, children: dto.children ?? 0 },
+      capacity,
+    );
+    if (err) throw new BadRequestException(err);
+  }
+
+  /** Phòng tồn tại, đang kinh doanh, loại phòng còn dùng */
+  private async loadBookableRoom(db: Db, roomId: string) {
+    const room = await db.room.findUnique({
+      where: { id: roomId },
+      select: ROOM_FOR_BOOKING,
+    });
+    if (!room) throw new NotFoundException('Không tìm thấy phòng');
+    if (room.status === 'inactive')
+      throw new BadRequestException(
+        `Phòng ${room.room_number} đã ngừng kinh doanh`,
+      );
+    if (room.status === 'maintenance')
+      throw new BadRequestException(`Phòng ${room.room_number} đang bảo trì`);
+    if (!room.room_type.is_active)
+      throw new BadRequestException('Loại phòng này đã ngừng sử dụng');
+    return room;
+  }
+
+  /**
+   * Cùng luật với findConflict() trong booking.rules (đã có unit test),
+   * viết thành điều kiện SQL để DB lọc thay vì kéo hết booking về.
+   */
+  private async findConflictInDb(db: Db, roomId: string, range: StayRange) {
+    const hit = await db.bookingRoom.findFirst({
+      where: {
         room_id: roomId,
-        old_status: oldStatus,
-        new_status: newStatus,
-        changed_by: accountId,
-        changed_at: new Date(),
-      })),
+        booking: {
+          status: { in: [...HOLDING_STATUSES] },
+          check_in_date: { lt: toDate(range.checkOut) },
+          check_out_date: { gt: toDate(range.checkIn) },
+        },
+      },
+      select: {
+        booking: {
+          select: { code: true, check_in_date: true, check_out_date: true },
+        },
+      },
     });
+    return hit?.booking ?? null;
   }
 
-  private bookingSelect() {
-    return {
-      id: true,
-      booking_type: true,
-      status: true,
-      check_in_date: true,
-      check_out_date: true,
-      actual_check_in: true,
-      actual_check_out: true,
-      // special_requests: true,
-      created_at: true,
-      updated_at: true,
-      customer: {
-        select: {
-          id: true,
-          first_name: true,
-          last_name: true,
-          phone: true,
-          email: true,
-        },
-      },
-      booking_rooms: {
-        select: {
-          price_per_night: true,
-          room: {
-            select: {
-              id: true,
-              room_number: true,
-              floor: true,
-              room_type: {
-                select: { name: true },
-              },
-            },
-          },
-        },
-      },
-      invoices: {
-        select: {
-          id: true,
-          total_amount: true,
-          discount: true,
-          final_amount: true,
-          status: true,
-        },
-      },
-    };
-  }
-
-  private transformBooking(booking: any): BookingResponseDto {
-    const nights = Math.ceil(
-      (new Date(booking.check_out_date).getTime() -
-        new Date(booking.check_in_date).getTime()) /
-        (1000 * 60 * 60 * 24),
-    );
-
-    const totalRoomPrice = booking.booking_rooms.reduce(
-      (sum: number, br: any) => sum + Number(br.price_per_night) * nights,
-      0,
-    );
-
-    const invoice = booking.invoices[0] ?? null;
-
-    return {
-      id: booking.id,
-      booking_type: booking.booking_type,
-      status: booking.status,
-      check_in_date: booking.check_in_date,
-      check_out_date: booking.check_out_date,
-      actual_check_in: booking.actual_check_in,
-      actual_check_out: booking.actual_check_out,
-      // special_requests: booking.special_requests,
-      nights,
-      // ← Fix 9: ưu tiên lấy từ invoice
-      total_room_price: totalRoomPrice,
-      customer: {
-        id: booking.customer.id,
-        full_name: `${booking.customer.last_name} ${booking.customer.first_name}`,
-        phone: booking.customer.phone,
-        email: booking.customer.email,
-      },
-      rooms: booking.booking_rooms.map((br: any) => ({
-        id: br.room.id,
-        room_number: br.room.room_number,
-        room_type_name: br.room.room_type.name,
-        price_per_night: Number(br.price_per_night),
-        floor: br.room.floor,
-      })),
-      invoice: invoice
-        ? {
-            id: invoice.id,
-            total_amount: Number(invoice.total_amount),
-            discount: Number(invoice.discount),
-            final_amount: Number(invoice.final_amount),
-            status: invoice.status,
-          }
-        : null,
-      created_at: booking.created_at,
-      updated_at: booking.updated_at,
-    };
-  }
-
-  // Private method kiểm tra ownership
-  private async checkBookingOwnership(
-    bookingId: string,
-    accountId: string,
-    roles: string[],
-  ): Promise<void> {
-    // Nếu không phải customer, không cần kiểm tra (admin/staff được phép)
-    if (!roles.includes('customer')) {
-      return;
-    }
-
-    // Lấy booking và customer tương ứng
-    const booking = await this.prisma.booking.findUnique({
-      where: { id: bookingId },
-      select: { customer_id: true },
-    });
-
-    if (!booking) {
-      throw new NotFoundException('Booking không tồn tại');
-    }
-
-    const customer = await this.prisma.customer.findUnique({
+  private async employeeByAccount(accountId: string) {
+    const employee = await this.prisma.employee.findUnique({
       where: { account_id: accountId },
       select: { id: true },
     });
+    // Tài khoản admin tạo tay có thể chưa có hồ sơ nhân viên -> không biết ghi ai là người tạo
+    if (!employee)
+      throw new ForbiddenException(
+        'Tài khoản này chưa gắn với hồ sơ nhân viên',
+      );
+    return employee;
+  }
 
-    if (!customer || booking.customer_id !== customer.id) {
-      throw new ForbiddenException('Bạn không có quyền truy cập booking này');
+  private async customerIdByAccount(accountId: string): Promise<string> {
+    const c = await this.prisma.customer.findUnique({
+      where: { account_id: accountId },
+      select: { id: true },
+    });
+    if (!c) throw new NotFoundException('Không tìm thấy hồ sơ khách hàng');
+    return c.id;
+  }
+
+  /* ============================================================
+   *  CHUYỂN DỮ LIỆU DB -> DTO
+   * ============================================================ */
+
+  private toRoomDto(
+    room: {
+      id: string;
+      room_number: string;
+      floor: number;
+      room_type: { name: string; capacity: number };
+    },
+    price: number,
+  ): BookingRoomDto {
+    return {
+      id: room.id,
+      room_number: room.room_number,
+      floor: room.floor,
+      room_type: room.room_type.name,
+      capacity: room.room_type.capacity,
+      price_per_night: price,
+    };
+  }
+
+  private toListItem(b: ListRow, today: string): BookingListItemDto {
+    const checkIn = toYmd(b.check_in_date);
+    const checkOut = toYmd(b.check_out_date);
+    const nights = nightsBetween(checkIn, checkOut);
+    const br = b.booking_rooms[0];
+    const price = br ? Number(br.price_per_night) : 0;
+    const invoice = b.invoices[0];
+
+    const amount =
+      b.status === 'cancelled' || b.status === 'no_show'
+        ? 0
+        : invoice
+          ? Number(invoice.final_amount)
+          : price * nights;
+
+    return {
+      id: b.id,
+      code: b.code,
+      status: b.status,
+      booking_type: b.booking_type,
+      check_in_date: checkIn,
+      check_out_date: checkOut,
+      nights,
+      adults: b.adults,
+      children: b.children,
+      customer: {
+        id: b.customer.id,
+        full_name: fullName(b.customer)!,
+        phone: b.customer.phone,
+        is_member: b.customer.account_id !== null,
+      },
+      room: br ? this.toRoomDto(br.room, price) : null,
+      amount,
+      is_overdue:
+        (b.status === 'confirmed' && checkIn < today) ||
+        (b.status === 'checked_in' && checkOut < today),
+      created_at: b.created_at,
+    };
+  }
+
+  /** hideStaff = true khi khách xem: không lộ tên nhân viên */
+  private toDetail(
+    b: DetailRow,
+    roles: string[],
+    hideStaff: boolean,
+  ): BookingDetailDto {
+    const today = todayYmd();
+    const base = this.toListItem(b, today);
+    const staff = (p: { first_name: string; last_name: string } | null) =>
+      hideStaff ? null : fullName(p);
+
+    const services = b.booking_services.map((s) => ({
+      id: s.id,
+      name: s.service.name,
+      quantity: s.quantity,
+      unit_price: Number(s.unit_price),
+      total_price: Number(s.total_price),
+      used_at: s.used_at,
+      note: s.note,
+    }));
+
+    const inv = b.invoices[0];
+    const invoice = inv
+      ? {
+          id: inv.id,
+          status: inv.status,
+          total_amount: Number(inv.total_amount),
+          discount: Number(inv.discount),
+          final_amount: Number(inv.final_amount),
+          paid_amount: inv.payments.reduce(
+            (sum, p) => sum + Number(p.amount),
+            0,
+          ),
+          payments: inv.payments.map((p) => ({
+            id: p.id,
+            amount: Number(p.amount),
+            payment_method: p.payment_method,
+            reference_number: p.reference_number,
+            paid_at: p.paid_at,
+            received_by: staff(p.receiver),
+          })),
+        }
+      : null;
+
+    return {
+      ...base,
+      note: b.note,
+      customer_has_id_card: !!b.customer.id_card,
+      room_total: (base.room?.price_per_night ?? 0) * base.nights,
+      service_total: services.reduce((sum, s) => sum + s.total_price, 0),
+      services,
+      invoice,
+      timeline: this.buildTimeline(b, staff),
+      allowed_actions: allowedActions(
+        {
+          status: b.status,
+          checkIn: base.check_in_date,
+          checkOut: base.check_out_date,
+        },
+        roles,
+        today,
+      ),
+      updated_at: b.updated_at,
+    };
+  }
+
+  private buildTimeline(
+    b: DetailRow,
+    staff: (
+      p: { first_name: string; last_name: string } | null,
+    ) => string | null,
+  ): BookingTimelineDto[] {
+    const events: BookingTimelineDto[] = [
+      // creator null = khách tự đặt online
+      {
+        event: 'created',
+        at: b.created_at,
+        by: b.creator ? staff(b.creator) : fullName(b.customer),
+      },
+    ];
+
+    // Nhân viên tạo thì đã xác nhận luôn cùng lúc -> không hiện thêm dòng "xác nhận" trùng lặp
+    if (b.confirmed_at && !b.created_by) {
+      events.push({
+        event: 'confirmed',
+        at: b.confirmed_at,
+        by: staff(b.confirmer),
+      });
     }
+    if (b.actual_check_in) {
+      events.push({
+        event: 'checked_in',
+        at: b.actual_check_in,
+        by: staff(b.check_in_staff),
+      });
+    }
+    if (b.actual_check_out) {
+      events.push({
+        event: 'checked_out',
+        at: b.actual_check_out,
+        by: staff(b.check_out_staff),
+      });
+    }
+    if (b.status === 'cancelled' && b.cancelled_at) {
+      const byEmployee = b.canceller?.employee ?? null;
+      events.push({
+        // Nhân viên huỷ đơn CHƯA từng được xác nhận = từ chối yêu cầu
+        event: byEmployee && !b.confirmed_at ? 'rejected' : 'cancelled',
+        at: b.cancelled_at,
+        by: byEmployee ? staff(byEmployee) : fullName(b.canceller?.customer),
+        ...(b.cancel_reason && { reason: b.cancel_reason }),
+      });
+    }
+    if (b.status === 'no_show') {
+      events.push({ event: 'no_show', at: b.updated_at, by: null });
+    }
+
+    return events.sort((x, y) => x.at.getTime() - y.at.getTime());
   }
 }

@@ -409,7 +409,7 @@ export class CustomersService {
         })),
         // Đã huỷ thì 0. Có hoá đơn thì lấy hoá đơn, chưa có thì ước tính theo giá phòng.
         amount:
-          b.status === 'cancelled'
+          b.status === 'cancelled' || b.status === 'no_show'
             ? 0
             : b.invoices.length
               ? invoiceTotal

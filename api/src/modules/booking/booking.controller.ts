@@ -1,405 +1,173 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
-  Patch,
+  ParseUUIDPipe,
   Post,
   Query,
-  UploadedFiles,
-  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
-  ApiConsumes,
   ApiOperation,
-  ApiParam,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/role-decorator';
 import { GetAccount } from '../../common/decorators/get-account.decorator';
-import { QueryBookingDto } from './dto/quey-booking.dto';
+import { BookingService } from './booking.service';
+import { CreateBookingDto, CreateMyBookingDto } from './dto/create-booking.dto';
+import { QuoteBookingDto } from './dto/quote-booking.dto';
+import { QueryBookingDto, QueryMyBookingDto } from './dto/quey-booking.dto';
 import {
-  BookingResponseDto,
+  BookingDetailDto,
+  BookingQuoteDto,
+  BookingStatsDto,
   PaginatedBookingResponseDto,
 } from './dto/booking-response.dto';
-import { ServicesService } from '../services/services.service';
-import { BookingService } from './booking.service';
-import { CreateBookingDto } from './dto/create-booking.dto';
-import { UpdateBookingDto } from './dto/update-booking.dto';
-import { BookingServiceResponseDto } from '../services/dto/booking-service-response.dto';
-import { AddBookingServiceDto } from '../services/dto/add-booking-service.dto';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
 
-@ApiTags('bookings')
-@ApiBearerAuth('JWT-auth')
+/** Chỉ nhận UUID v4, sai định dạng -> 400 trước khi chạm DB */
+const BookingId = () => Param('id', new ParseUUIDPipe({ version: '4' }));
+
+/**
+ * THỨ TỰ ROUTE QUAN TRỌNG: route cố định (/quote, /stats, /me) phải khai báo
+ * TRƯỚC route có tham số (/:id), nếu không Nest hiểu "stats" là một :id.
+ */
+@ApiTags('Bookings')
+@ApiBearerAuth()
 @Controller('bookings')
 export class BookingController {
-  constructor(
-    private readonly bookingService: BookingService,
-    private readonly servicesService: ServicesService,
-  ) {}
+  constructor(private readonly bookingService: BookingService) {}
 
-  // ==================== MY BOOKINGS ====================
-  @Get('my-booking')
-  @HttpCode(200)
-  @Roles('customer')
-  @ApiOperation({
-    summary: 'Xem booking của tôi',
-    description: 'Khách hàng xem danh sách booking của mình',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Trả về danh sách booking',
-    type: PaginatedBookingResponseDto,
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
-  @ApiResponse({ status: 404, description: 'Không tìm thấy khách hàng' })
-  async getMyBooking(
-    @GetAccount('sub') accountId: string,
-    @Query() query: QueryBookingDto,
-  ): Promise<PaginatedBookingResponseDto> {
-    return this.bookingService.getMyBookings(accountId, query);
-  }
+  /* ============================== Dùng chung ============================== */
 
-  // ==================== CREATE ====================
-  @Post()
-  @HttpCode(201)
-  @Roles('staff', 'manager', 'admin', 'customer')
+  @Get('quote')
+  @Roles('customer', 'staff', 'manager', 'admin')
   @ApiOperation({
-    summary: 'Tạo booking mới',
-    description: `
-      - Customer: tự đặt phòng online
-      - Staff/Manager: đặt phòng cho khách tại quầy
-      - Booking tạo ra ở trạng thái pending
-    `,
+    summary: 'Báo giá + kiểm tra phòng còn trống',
+    description:
+      'Không ghi gì vào DB. FE gọi khi đổi ngày / số khách để hiện tổng tiền trước khi đặt',
   })
-  @ApiResponse({
-    status: 201,
-    description: 'Tạo booking thành công',
-    type: BookingResponseDto,
-  })
+  @ApiResponse({ status: 200, type: BookingQuoteDto })
   @ApiResponse({
     status: 400,
-    description: 'Ngày không hợp lệ hoặc phòng không available',
+    description: 'Ngày sai, quá sức chứa, phòng bảo trì / ngừng kinh doanh',
   })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
+  quote(@Query() query: QuoteBookingDto): Promise<BookingQuoteDto> {
+    return this.bookingService.quote(query);
+  }
+
+  /* ============================== Khách hàng ============================== */
+
+  @Get('me')
+  @Roles('customer')
+  @ApiOperation({ summary: 'Khách xem danh sách booking của mình' })
+  @ApiResponse({ status: 200, type: PaginatedBookingResponseDto })
+  findMine(
+    @GetAccount('sub') accountId: string,
+    @Query() query: QueryMyBookingDto,
+  ): Promise<PaginatedBookingResponseDto> {
+    return this.bookingService.findMine(accountId, query.page, query.limit);
+  }
+
+  @Get('me/:id')
+  @Roles('customer')
+  @ApiOperation({ summary: 'Khách xem chi tiết 1 booking của mình' })
+  @ApiResponse({ status: 200, type: BookingDetailDto })
   @ApiResponse({
     status: 404,
-    description: 'Không tìm thấy khách hàng hoặc phòng',
+    description: 'Không có, hoặc là booking của người khác',
+  })
+  findMyOne(
+    @GetAccount('sub') accountId: string,
+    @BookingId() id: string,
+  ): Promise<BookingDetailDto> {
+    return this.bookingService.findMyOne(accountId, id);
+  }
+
+  @Post('me')
+  @HttpCode(HttpStatus.CREATED)
+  @Roles('customer')
+  @ApiOperation({
+    summary: 'Khách tự đặt phòng online',
+    description:
+      'Tạo ở trạng thái pending, chờ lễ tân duyệt. Mỗi khách tối đa 3 yêu cầu đang chờ',
+  })
+  @ApiResponse({ status: 201, type: BookingDetailDto })
+  @ApiResponse({
+    status: 400,
+    description: 'Ngày / số khách sai, hoặc đã có 3 yêu cầu đang chờ',
   })
   @ApiResponse({
     status: 409,
-    description: 'Phòng đã được đặt trong khoảng thời gian này',
+    description: 'Phòng đã có người đặt trong khoảng ngày này',
   })
-  async create(
-    @Body() createBookingDto: CreateBookingDto,
+  createMine(
     @GetAccount('sub') accountId: string,
-    @GetAccount('roles') roles: string[],
-  ): Promise<BookingResponseDto> {
-    return this.bookingService.create(createBookingDto, accountId, roles);
+    @Body() dto: CreateMyBookingDto,
+  ): Promise<BookingDetailDto> {
+    return this.bookingService.createByCustomer(accountId, dto);
   }
 
-  // ==================== FIND ALL ====================
+  /* ============================== Nhân viên ============================== */
+
+  @Get('stats')
+  @Roles('staff', 'manager', 'admin')
+  @ApiOperation({ summary: 'Số lượng trên các tab + công suất phòng' })
+  @ApiResponse({ status: 200, type: BookingStatsDto })
+  getStats(): Promise<BookingStatsDto> {
+    return this.bookingService.getStats();
+  }
+
   @Get()
   @Roles('staff', 'manager', 'admin')
-  @ApiOperation({
-    summary: 'Lấy danh sách booking',
-    description:
-      'Hỗ trợ filter theo trạng thái, loại, ngày và tìm kiếm theo tên khách',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Trả về danh sách booking',
-    type: PaginatedBookingResponseDto,
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
-  async findAll(
+  @ApiOperation({ summary: 'Danh sách booking theo tab, lọc, tìm kiếm' })
+  @ApiResponse({ status: 200, type: PaginatedBookingResponseDto })
+  findAll(
     @Query() query: QueryBookingDto,
   ): Promise<PaginatedBookingResponseDto> {
     return this.bookingService.findAll(query);
   }
 
-  // ==================== FIND ONE ====================
   @Get(':id')
-  @HttpCode(200)
   @Roles('staff', 'manager', 'admin')
   @ApiOperation({
-    summary: 'Xem chi tiết booking',
-    description: 'Xem thông tin chi tiết của 1 booking',
+    summary:
+      'Chi tiết booking: phòng, dịch vụ, hoá đơn, lịch sử, nút được phép bấm',
   })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của booking',
-    example: 'uuid-123',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Trả về chi tiết booking',
-    type: BookingResponseDto,
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
-  @ApiResponse({ status: 404, description: 'Không tìm thấy booking' })
-  async findOne(@Param('id') id: string): Promise<BookingResponseDto> {
-    return this.bookingService.findOne(id);
+  @ApiResponse({ status: 200, type: BookingDetailDto })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy' })
+  findOne(
+    @BookingId() id: string,
+    @GetAccount('roles') roles: string[],
+  ): Promise<BookingDetailDto> {
+    return this.bookingService.findOne(id, roles);
   }
 
-  // ==================== CONFIRM ====================
-  @Post(':id/confirm')
-  @HttpCode(200)
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
   @Roles('staff', 'manager', 'admin')
   @ApiOperation({
-    summary: 'Xác nhận booking',
-    description: 'Chuyển booking từ pending → confirmed và tự động tạo Invoice',
+    summary: 'Lễ tân tạo booking (tại quầy / qua điện thoại)',
+    description:
+      'Xác nhận luôn (confirmed). Khách mới thì tạo hồ sơ ở /customers trước',
   })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của booking',
-    example: 'uuid-123',
-  })
+  @ApiResponse({ status: 201, type: BookingDetailDto })
   @ApiResponse({
-    status: 200,
-    description: 'Xác nhận thành công + Invoice được tạo',
-    type: BookingResponseDto,
+    status: 403,
+    description: 'Tài khoản chưa gắn hồ sơ nhân viên',
   })
-  @ApiResponse({
-    status: 400,
-    description: 'Booking không ở trạng thái pending',
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
-  @ApiResponse({ status: 404, description: 'Không tìm thấy booking' })
   @ApiResponse({
     status: 409,
-    description: 'Phòng đã được đặt trong khoảng thời gian này',
+    description: 'Trùng lịch, báo kèm mã booking đang giữ phòng',
   })
-  async confirm(@Param('id') id: string): Promise<BookingResponseDto> {
-    return this.bookingService.confirm(id);
-  }
-
-  // ==================== CHECK-IN ====================
-  @Post(':id/check-in')
-  @HttpCode(200)
-  @Roles('staff', 'manager', 'admin')
-  @UseInterceptors(
-    FileFieldsInterceptor(
-      [
-        { name: 'front_image', maxCount: 1 },
-        { name: 'back_image', maxCount: 1 },
-      ],
-      { limits: { fileSize: 5 * 1024 * 1024 } },
-    ),
-  )
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({
-    summary: 'Check-in khách',
-    description:
-      'Chuyển booking confirmed → checked_in. Đổi phòng sang occupied',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của booking',
-    example: 'uuid-123',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Check-in thành công',
-    type: BookingResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description:
-      'Booking không ở trạng thái confirmed hoặc chưa đến ngày check-in',
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
-  @ApiResponse({ status: 404, description: 'Không tìm thấy booking' })
-  async checkIn(
-    @Param('id') id: string,
+  create(
     @GetAccount('sub') accountId: string,
-    @UploadedFiles()
-    files: {
-      front_image?: Express.Multer.File[];
-      back_image?: Express.Multer.File[];
-    },
-  ): Promise<BookingResponseDto> {
-    return this.bookingService.checkIn(id, accountId, files);
-  }
-
-  // ==================== CHECK-OUT ====================
-  @Post(':id/check-out')
-  @HttpCode(200)
-  @Roles('staff', 'manager', 'admin')
-  @ApiOperation({
-    summary: 'Check-out khách',
-    description:
-      'Chuyển booking checked_in → checked_out. Đổi phòng sang cleaning',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của booking',
-    example: 'uuid-123',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Check-out thành công',
-    type: BookingResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Booking không ở trạng thái checked_in hoặc chưa thanh toán',
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
-  @ApiResponse({ status: 404, description: 'Không tìm thấy booking' })
-  async checkOut(
-    @Param('id') id: string,
-    @GetAccount('sub') accountId: string,
-  ): Promise<BookingResponseDto> {
-    return this.bookingService.checkOut(id, accountId);
-  }
-
-  // ==================== ADD SERVICE ====================
-  @Post(':id/services')
-  @HttpCode(201)
-  @Roles('staff', 'manager', 'admin')
-  @ApiOperation({
-    summary: 'Thêm dịch vụ vào booking',
-    description:
-      'Chỉ thêm được khi booking đang checked_in. Tự động cập nhật invoice',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của booking',
-    example: 'uuid-123',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Thêm dịch vụ thành công',
-    type: BookingServiceResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Booking không ở trạng thái check-in',
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
-  @ApiResponse({
-    status: 404,
-    description: 'Không tìm thấy booking hoặc dịch vụ',
-  })
-  async addService(
-    @Param('id') bookingId: string,
-    @Body() dto: AddBookingServiceDto,
-  ): Promise<BookingServiceResponseDto> {
-    return this.servicesService.addToBooking(bookingId, dto);
-  }
-
-  // ==================== REMOVE SERVICE ====================
-  @Delete(':id/services/:bookingServiceId')
-  @HttpCode(200)
-  @Roles('staff', 'manager', 'admin')
-  @ApiOperation({
-    summary: 'Xóa dịch vụ khỏi booking',
-    description: 'Tự động cập nhật lại invoice',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của booking',
-    example: 'uuid-123',
-  })
-  @ApiParam({
-    name: 'bookingServiceId',
-    description: 'UUID của booking_service (không phải service_id)',
-    example: 'uuid-456',
-  })
-  @ApiResponse({ status: 200, description: 'Xóa thành công' })
-  @ApiResponse({
-    status: 400,
-    description: 'Booking không ở trạng thái check-in',
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
-  @ApiResponse({
-    status: 404,
-    description: 'Không tìm thấy dịch vụ trong booking',
-  })
-  async removeService(
-    @Param('id') bookingId: string,
-    @Param('bookingServiceId') bookingServiceId: string,
-  ): Promise<{ message: string }> {
-    await this.servicesService.removeFromBooking(bookingId, bookingServiceId);
-    return { message: 'Xóa dịch vụ khỏi booking thành công' };
-  }
-
-  // ==================== UPDATE ====================
-  @Patch(':id')
-  @HttpCode(200)
-  @Roles('customer', 'staff', 'manager', 'admin')
-  @ApiOperation({
-    summary: 'Cập nhật booking',
-    description: 'Chỉ cập nhật được khi booking ở trạng thái pending',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của booking',
-    example: 'uuid-123',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Cập nhật thành công',
-    type: BookingResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Booking không ở trạng thái pending',
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
-  @ApiResponse({ status: 404, description: 'Không tìm thấy booking' })
-  async update(
-    @Param('id') id: string,
-    @Body() updateBookingDto: UpdateBookingDto,
-  ): Promise<BookingResponseDto> {
-    return this.bookingService.update(id, updateBookingDto);
-  }
-
-  // ==================== CANCEL ====================
-  @Delete(':id')
-  @HttpCode(200)
-  @Roles('customer', 'staff', 'manager', 'admin')
-  @ApiOperation({
-    summary: 'Hủy booking',
-    description: 'Chỉ hủy được khi booking ở trạng thái pending hoặc confirmed',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của booking',
-    example: 'uuid-123',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Hủy booking thành công',
-    type: BookingResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Không thể hủy booking ở trạng thái này',
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền hủy booking này' })
-  @ApiResponse({ status: 404, description: 'Không tìm thấy booking' })
-  async cancel(
-    @Param('id') id: string,
-    @GetAccount('sub') accountId: string,
-  ): Promise<BookingResponseDto> {
-    return this.bookingService.cancel(id, accountId);
+    @GetAccount('roles') roles: string[],
+    @Body() dto: CreateBookingDto,
+  ): Promise<BookingDetailDto> {
+    return this.bookingService.createByStaff(accountId, roles, dto);
   }
 }
