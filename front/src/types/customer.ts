@@ -11,7 +11,8 @@ export type BookingStatus =
   | "confirmed"
   | "checked_in"
   | "checked_out"
-  | "cancelled";
+  | "cancelled"
+  | "no_show";
 export type CustomerSort = "created_at" | "name" | "reward_points" | "stays";
 export type Membership = "member" | "guest";
 
@@ -146,6 +147,7 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   checked_in: "Đang ở",
   checked_out: "Đã trả phòng",
   cancelled: "Đã huỷ",
+  no_show: "Không check-in",
 };
 
 /** Mỗi lựa chọn sắp xếp = 1 cặp sort + order, gộp lại cho 1 ô chọn */
