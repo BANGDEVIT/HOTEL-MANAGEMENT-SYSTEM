@@ -17,6 +17,7 @@ import { InvoiceModule } from './modules/invoice/invoice.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { MailModule } from './common/mail/mail.module';
 import { RedisModule } from './common/redis/redis.module';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppThrottlerModule } from './common/throttler/throttler.module';
 import { AppController } from './app.controller';
 
@@ -41,6 +42,7 @@ import { AppController } from './app.controller';
     MailModule,
     RedisModule,
     AppThrottlerModule,
+    ScheduleModule.forRoot(),
   ],
   controllers: [AppController],
   providers: [

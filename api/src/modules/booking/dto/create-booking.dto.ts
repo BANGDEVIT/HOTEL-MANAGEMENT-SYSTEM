@@ -1,6 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { IdType } from '@prisma/client';
 import {
+  IsBoolean,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -68,4 +71,30 @@ export class CreateBookingDto extends CreateMyBookingDto {
   })
   @IsUUID('4')
   customer_id: string;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Khách đang đứng ở quầy: tạo xong nhận phòng luôn (ngày nhận phải là hôm nay)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  check_in_now?: boolean = false;
+
+  @ApiPropertyOptional({
+    enum: IdType,
+    description: 'Chỉ dùng khi check_in_now và hồ sơ khách chưa có giấy tờ',
+  })
+  @IsOptional()
+  @IsEnum(IdType)
+  id_type?: IdType;
+
+  @ApiPropertyOptional({ example: '079203001234' })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.replace(/\s/g, '').toUpperCase() : value,
+  )
+  @IsString()
+  @MaxLength(20)
+  id_card?: string;
 }

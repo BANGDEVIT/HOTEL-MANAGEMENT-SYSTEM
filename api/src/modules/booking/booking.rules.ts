@@ -169,6 +169,7 @@ export const BOOKING_ACTIONS = [
   'check_in',
   'mark_no_show',
   'add_service',
+  'set_discount', // chỉ quản lý
   'check_out',
 ] as const;
 export type BookingAction = (typeof BOOKING_ACTIONS)[number];
@@ -195,7 +196,9 @@ export function allowedActions(
 
   switch (status) {
     case 'pending':
-      if (isStaff) actions.push('confirm', 'reject');
+      // Qua ngày nhận mà chưa duyệt thì chỉ còn từ chối (cron cũng sẽ tự huỷ)
+      if (isStaff && checkIn >= today) actions.push('confirm');
+      if (isStaff) actions.push('reject');
       else if (isCustomer) actions.push('cancel');
       break;
 
@@ -208,11 +211,129 @@ export function allowedActions(
       break;
 
     case 'checked_in':
-      if (isStaff) actions.push('add_service', 'check_out');
+      if (isStaff) actions.push('add_service');
+      if (isManager) actions.push('set_discount');
+      if (isStaff) actions.push('check_out');
       break;
 
     // checked_out, cancelled, no_show: đã kết thúc, không làm gì thêm
   }
 
   return actions;
+}
+
+export const STATUS_LABELS: Record<BookingStatus, string> = {
+  pending: 'Chờ xác nhận',
+  confirmed: 'Đã xác nhận',
+  checked_in: 'Đang ở',
+  checked_out: 'Đã trả phòng',
+  cancelled: 'Đã huỷ',
+  no_show: 'Không đến',
+};
+
+export const ACTION_LABELS: Record<BookingAction, string> = {
+  confirm: 'xác nhận',
+  reject: 'từ chối',
+  cancel: 'huỷ',
+  check_in: 'nhận phòng',
+  mark_no_show: 'đánh dấu không đến',
+  add_service: 'thêm dịch vụ',
+  set_discount: 'giảm giá',
+  check_out: 'trả phòng',
+};
+
+/**
+ * Vì sao KHÔNG được làm hành động này: trả về { status, message } để service ném đúng mã lỗi.
+ *   403: đúng thời điểm nhưng sai quyền (staff huỷ đơn đã xác nhận)
+ *   400: sai trạng thái / sai ngày (nhận phòng booking đã huỷ, nhận phòng sớm)
+ * Được phép thì trả null.
+ */
+export function actionError(
+  booking: { status: BookingStatus; checkIn: string; checkOut: string },
+  roles: readonly string[],
+  today: string,
+  action: BookingAction,
+): { status: 400 | 403; message: string } | null {
+  if (allowedActions(booking, roles, today).includes(action)) return null;
+
+  // Admin mà cũng không làm được -> lỗi do trạng thái / ngày, không phải do quyền
+  const anyoneCan =
+    allowedActions(booking, ['admin'], today).includes(action) ||
+    allowedActions(booking, ['customer'], today).includes(action);
+  if (anyoneCan) {
+    return {
+      status: 403,
+      message: `Bạn không có quyền ${ACTION_LABELS[action]} booking này`,
+    };
+  }
+
+  const reason: Partial<Record<BookingAction, string>> = {
+    confirm: booking.status === 'pending' ? 'đã qua ngày nhận phòng' : '',
+    check_in:
+      booking.status === 'confirmed'
+        ? booking.checkIn > today
+          ? `chưa tới ngày nhận phòng (${booking.checkIn})`
+          : 'đã tới ngày trả phòng'
+        : '',
+    mark_no_show:
+      booking.status === 'confirmed' ? 'chưa qua ngày nhận phòng' : '',
+  };
+  const why =
+    reason[action] ||
+    `booking đang ở trạng thái "${STATUS_LABELS[booking.status]}"`;
+  return { status: 400, message: `Không thể ${ACTION_LABELS[action]}: ${why}` };
+}
+
+/* ============================================================
+ *  NHẬN PHÒNG, TRẢ PHÒNG, CRON
+ * ============================================================ */
+
+/** CCCD đúng 12 số; hộ chiếu 6-12 ký tự chữ + số */
+export function validateIdCard(
+  type: 'cccd' | 'passport' | null | undefined,
+  card: string | null | undefined,
+): string | null {
+  if (!card) return 'Cần số giấy tờ (CCCD / hộ chiếu) để nhận phòng';
+  if (!type) return 'Chọn loại giấy tờ (CCCD hoặc hộ chiếu)';
+  if (type === 'cccd' && !/^\d{12}$/.test(card))
+    return 'Số CCCD gồm đúng 12 chữ số';
+  if (type === 'passport' && !/^[A-Z0-9]{6,12}$/.test(card))
+    return 'Số hộ chiếu gồm 6-12 ký tự chữ in hoa và số';
+  return null;
+}
+
+/** 10.000đ thực trả = 1 điểm, làm tròn xuống. Chỉ thành viên (có tài khoản) mới được cộng */
+export const POINT_UNIT = 10_000;
+export const pointsFor = (paidAmount: number) =>
+  Math.max(0, Math.floor(paidAmount / POINT_UNIT));
+
+/** Hoá đơn: tổng = phòng + dịch vụ; phải trả = tổng - giảm giá (không âm) */
+export function invoiceTotals(
+  roomTotal: number,
+  serviceTotal: number,
+  discount: number,
+) {
+  const total = roomTotal + serviceTotal;
+  return {
+    total_amount: total,
+    discount,
+    final_amount: Math.max(0, total - discount),
+  };
+}
+
+/**
+ * Cron chạy mỗi ngày lúc 12:05 (giờ trả phòng), quyết định booking nào tự đóng:
+ *   pending   mà ngày nhận < hôm nay -> 'expire'  (khách sạn không kịp duyệt, huỷ để nhả phòng)
+ *   confirmed mà ngày nhận < hôm nay -> 'no_show' (khách được giữ phòng tới trưa hôm sau)
+ * Chạy lúc 12:05 nên khách đến trễ lúc nửa đêm / sáng sớm hôm sau vẫn nhận phòng được.
+ */
+export function autoCloseAction(
+  status: BookingStatus,
+  checkIn: string,
+  today: string,
+): 'expire' | 'no_show' | null {
+  if (checkIn >= today) return null;
+  if (status === 'pending') return 'expire';
+  if (status === 'confirmed') return 'no_show';
+  return null;
 }

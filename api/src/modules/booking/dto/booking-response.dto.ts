@@ -159,6 +159,13 @@ export class BookingDetailDto extends BookingListItemDto {
   })
   allowed_actions: BookingAction[];
 
+  @ApiProperty({
+    example: 175,
+    description:
+      'Điểm được cộng khi trả phòng (10.000đ = 1 điểm). Khách vãng lai / chưa trả phòng = 0',
+  })
+  points_earned: number;
+
   @ApiProperty() updated_at: Date;
 }
 
@@ -197,4 +204,13 @@ export class BookingStatsDto {
     description: '% phòng đang có khách / phòng đang kinh doanh',
   })
   occupancy_rate: number;
+}
+
+export class HousekeepingResultDto {
+  @ApiProperty({ description: 'Yêu cầu pending quá ngày nhận, đã tự huỷ' })
+  expired: number;
+  @ApiProperty({
+    description: 'Booking confirmed quá ngày nhận, đã chuyển no_show',
+  })
+  no_show: number;
 }

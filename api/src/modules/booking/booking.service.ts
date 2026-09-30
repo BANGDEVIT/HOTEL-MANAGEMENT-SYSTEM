@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -14,6 +13,7 @@ import {
   HOLDING_STATUSES,
   MAX_PENDING_PER_CUSTOMER,
   nightsBetween,
+  pointsFor,
   quoteStay,
   type StayRange,
   toDate,
@@ -34,6 +34,7 @@ import {
   BookingTimelineDto,
   PaginatedBookingResponseDto,
 } from './dto/booking-response.dto';
+import { BookingActionsService } from './bookingActions.service';
 
 /* ============================================================
  *  SELECT dùng chung. `satisfies` giữ kiểu literal -> Prisma suy ra đúng kiểu kết quả
@@ -158,6 +159,14 @@ interface NewBooking {
   employeeId: string | null;
   /** Nhân viên được biết booking nào đang chiếm phòng, khách thì không */
   revealConflict: boolean;
+  /** "Tạo và nhận phòng luôn": nhận phòng trong CÙNG transaction */
+  checkInNow?: {
+    accountId: string;
+    roles: string[];
+    employeeId: string;
+    id_type?: CreateBookingDto['id_type'];
+    id_card?: string;
+  };
 }
 
 @Injectable()
@@ -165,6 +174,7 @@ export class BookingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly actions: BookingActionsService,
   ) {}
 
   /* ============================================================
@@ -198,13 +208,13 @@ export class BookingService {
    *  TẠO BOOKING
    * ============================================================ */
 
-  /** Lễ tân tạo (tại quầy / qua điện thoại) -> xác nhận luôn */
+  /** Lễ tân tạo (tại quầy / qua điện thoại) -> xác nhận luôn, tuỳ chọn nhận phòng luôn */
   async createByStaff(
     accountId: string,
     roles: string[],
     dto: CreateBookingDto,
   ): Promise<BookingDetailDto> {
-    const employee = await this.employeeByAccount(accountId);
+    const employee = await this.actions.employeeByAccount(accountId);
 
     const customer = await this.prisma.customer.findUnique({
       where: { id: dto.customer_id },
@@ -219,6 +229,15 @@ export class BookingService {
       status: 'confirmed',
       employeeId: employee.id,
       revealConflict: true,
+      checkInNow: dto.check_in_now
+        ? {
+            accountId,
+            roles,
+            employeeId: employee.id,
+            id_type: dto.id_type,
+            id_card: dto.id_card,
+          }
+        : undefined,
     });
 
     return this.findOne(id, roles);
@@ -229,7 +248,7 @@ export class BookingService {
     accountId: string,
     dto: CreateMyBookingDto,
   ): Promise<BookingDetailDto> {
-    const customerId = await this.customerIdByAccount(accountId);
+    const customerId = await this.actions.customerIdByAccount(accountId);
 
     // Chặn giữ chỗ ảo: 1 khách tối đa N yêu cầu đang chờ
     const pending = await this.prisma.booking.count({
@@ -294,7 +313,7 @@ export class BookingService {
         const now = new Date();
         const confirmed = input.status === 'confirmed';
 
-        return tx.booking.create({
+        const booking = await tx.booking.create({
           data: {
             code: bookingCode(now, n),
             customer_id: input.customerId,
@@ -319,6 +338,18 @@ export class BookingService {
           },
           select: { id: true },
         });
+
+        // 5. Khách đang đứng ở quầy: nhận phòng luôn. Lỗi (thiếu giấy tờ, phòng chưa dọn...)
+        //    thì cả booking cũng không được tạo -> không để lại booking "treo"
+        if (input.checkInNow) {
+          const { id_type, id_card, ...staff } = input.checkInNow;
+          await this.actions.checkInTx(tx, booking.id, staff, {
+            id_type,
+            id_card,
+          });
+        }
+
+        return booking;
       },
       // Neon ở xa, mặc định 5s đôi khi không đủ khi phải đợi khoá
       { maxWait: 5_000, timeout: 10_000 },
@@ -531,7 +562,7 @@ export class BookingService {
     page = 1,
     limit = 10,
   ): Promise<PaginatedBookingResponseDto> {
-    const customerId = await this.customerIdByAccount(accountId);
+    const customerId = await this.actions.customerIdByAccount(accountId);
     const where: Prisma.BookingWhereInput = { customer_id: customerId };
 
     const [rows, total] = await Promise.all([
@@ -556,7 +587,7 @@ export class BookingService {
   }
 
   async findMyOne(accountId: string, id: string): Promise<BookingDetailDto> {
-    const customerId = await this.customerIdByAccount(accountId);
+    const customerId = await this.actions.customerIdByAccount(accountId);
     // Lọc luôn theo customer_id: booking của người khác trả 404 như không tồn tại,
     // không trả 403 (403 = xác nhận là có booking đó)
     const row = await this.prisma.booking.findFirst({
@@ -626,28 +657,6 @@ export class BookingService {
       },
     });
     return hit?.booking ?? null;
-  }
-
-  private async employeeByAccount(accountId: string) {
-    const employee = await this.prisma.employee.findUnique({
-      where: { account_id: accountId },
-      select: { id: true },
-    });
-    // Tài khoản admin tạo tay có thể chưa có hồ sơ nhân viên -> không biết ghi ai là người tạo
-    if (!employee)
-      throw new ForbiddenException(
-        'Tài khoản này chưa gắn với hồ sơ nhân viên',
-      );
-    return employee;
-  }
-
-  private async customerIdByAccount(accountId: string): Promise<string> {
-    const c = await this.prisma.customer.findUnique({
-      where: { account_id: accountId },
-      select: { id: true },
-    });
-    if (!c) throw new NotFoundException('Không tìm thấy hồ sơ khách hàng');
-    return c.id;
   }
 
   /* ============================================================
@@ -775,6 +784,10 @@ export class BookingService {
         roles,
         today,
       ),
+      points_earned:
+        b.status === 'checked_out' && b.customer.account_id && invoice
+          ? pointsFor(invoice.final_amount)
+          : 0,
       updated_at: b.updated_at,
     };
   }
