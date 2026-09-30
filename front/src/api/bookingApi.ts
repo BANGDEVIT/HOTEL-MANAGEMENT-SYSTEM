@@ -1,4 +1,5 @@
 import axiosInstance from "./axiosInstance";
+import { serviceApi } from "./serviceApi";
 import type { Paginated } from "../types/customer";
 import type {
   AvailableRoom,
@@ -147,26 +148,14 @@ export const bookingApi = {
     await axiosInstance.patch(`/rooms/${roomId}/status`, { status: "available" });
   },
 
-  /**
-   * Dịch vụ đang bán. Chấp nhận cả 2 dạng BE hay trả: mảng thẳng hoặc { data: [...] } có phân trang.
-   * Nếu module Dịch vụ của bạn dùng route / field khác thì sửa đúng hàm này.
-   */
+  /** Dịch vụ đang bán cho hộp thoại "Thêm dịch vụ": dùng nhiều xếp trước, kèm đơn vị tính */
   services: async (): Promise<ServiceOption[]> => {
-    const { data } = await axiosInstance.get<Envelope<unknown>>("/services", {
-      params: { limit: 100 },
-    });
-    const raw = Array.isArray(data.data)
-      ? data.data
-      : ((data.data as { data?: unknown[] })?.data ?? []);
-    return (
-      raw as {
-        id: string;
-        name: string;
-        price: number | string;
-        is_active?: boolean;
-      }[]
-    )
-      .filter((s) => s.is_active !== false)
-      .map((s) => ({ id: s.id, name: s.name, price: Number(s.price) }));
+    const list = await serviceApi.listActive();
+    return list.map((s) => ({
+      id: s.id,
+      name: s.name,
+      price: s.price,
+      unit: s.unit,
+    }));
   },
 };

@@ -3,6 +3,7 @@
  * Ngày ở ("YYYY-MM-DD") và thời điểm (ISO) đi qua JSON đều là chuỗi.
  */
 import type { BookingStatus, IdType } from "./customer";
+import type { ServiceUnit } from "./service";
 
 export type { BookingStatus } from "./customer";
 export type BookingType = "online" | "walk_in";
@@ -161,6 +162,7 @@ export interface ServiceOption {
   id: string;
   name: string;
   price: number;
+  unit: ServiceUnit;
 }
 
 /* ============================ Dữ liệu FE gửi lên ============================ */
