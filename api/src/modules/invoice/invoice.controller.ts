@@ -1,9 +1,12 @@
-// invoice.controller.ts
-import { Controller, Get, Patch, Param, Body, HttpCode } from '@nestjs/common';
-import { InvoiceService } from './invoice.service';
-import { InvoiceResponseDto } from './dto/invoice-response.dto';
-import { UpdateInvoiceDiscountDto } from './dto/update-invoice.dto';
-import { Roles } from '../../common/decorators/role-decorator';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -11,103 +14,99 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Roles } from '../../common/decorators/role-decorator';
 import { GetAccount } from '../../common/decorators/get-account.decorator';
+import { InvoiceService } from './invoice.service';
+import { InvoiceStatsQueryDto, QueryInvoiceDto } from './dto/query-invoice.dto';
+import {
+  InvoiceDetailDto,
+  InvoiceStatsDto,
+  PaginatedInvoiceResponseDto,
+} from './dto/invoice-response.dto';
 
+/** Chỉ nhận UUID v4, sai định dạng -> 400 trước khi chạm DB */
+const Uuid = (name: string) => Param(name, new ParseUUIDPipe({ version: '4' }));
+
+/**
+ * Hoá đơn CHỈ ĐỌC ở đây. Hoá đơn được tạo / tính lại ở module Booking:
+ *   nhận phòng -> mở hoá đơn; thêm dịch vụ / giảm giá -> tính lại; trả phòng -> thu nốt.
+ * Thu tiền, huỷ phiếu thu nằm ở module Payment.
+ *
+ * THỨ TỰ ROUTE: /stats, /booking/:id phải khai báo TRƯỚC /:id,
+ * nếu không Nest hiểu "stats" là một :id.
+ */
 @ApiTags('invoices')
 @ApiBearerAuth('JWT-auth')
 @Controller('invoices')
 export class InvoiceController {
   constructor(private readonly invoiceService: InvoiceService) {}
 
-  // ==================== FIND BY BOOKING ====================
+  @Get()
+  @Roles('staff', 'manager', 'admin')
+  @ApiOperation({
+    summary: 'Danh sách hoá đơn',
+    description: 'Tab: all / open (đang ở) / debt (công nợ) / paid',
+  })
+  @ApiResponse({ status: 200, type: PaginatedInvoiceResponseDto })
+  findAll(
+    @Query() query: QueryInvoiceDto,
+  ): Promise<PaginatedInvoiceResponseDto> {
+    return this.invoiceService.findAll(query);
+  }
+
+  @Get('stats')
+  @Roles('staff', 'manager', 'admin')
+  @ApiOperation({
+    summary: 'Thống kê thu tiền',
+    description:
+      'Thực thu theo kỳ (mặc định tháng này), theo phương thức, theo ngày; còn phải thu; công nợ; phiếu huỷ',
+  })
+  @ApiResponse({ status: 200, type: InvoiceStatsDto })
+  stats(@Query() query: InvoiceStatsQueryDto): Promise<InvoiceStatsDto> {
+    return this.invoiceService.stats(query);
+  }
+
   @Get('booking/:bookingId')
-  @HttpCode(200)
+  @HttpCode(HttpStatus.OK)
   @Roles('customer', 'staff', 'manager', 'admin')
   @ApiOperation({
-    summary: 'Xem hóa đơn theo booking',
-    description: 'Lấy hóa đơn của một booking cụ thể',
+    summary: 'Xem hoá đơn theo booking',
+    description: 'Khách chỉ xem được hoá đơn của mình',
   })
-  @ApiParam({
-    name: 'bookingId',
-    description: 'UUID của booking',
-    example: 'uuid-123',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Trả về hóa đơn',
-    type: InvoiceResponseDto,
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền' })
+  @ApiParam({ name: 'bookingId', description: 'UUID của booking' })
+  @ApiResponse({ status: 200, type: InvoiceDetailDto })
   @ApiResponse({
     status: 404,
-    description: 'Không tìm thấy booking hoặc hóa đơn',
+    description:
+      'Booking chưa nhận phòng (chưa có hoá đơn) hoặc không phải của bạn',
   })
-  async findByBooking(
-    @Param('bookingId') bookingId: string,
-  ): Promise<InvoiceResponseDto> {
-    return this.invoiceService.findByBooking(bookingId);
-  }
-
-  // ==================== FIND ONE ====================
-  @Get(':id')
-  @HttpCode(200)
-  @Roles('customer', 'staff', 'manager', 'admin')
-  @ApiOperation({
-    summary: 'Xem chi tiết hóa đơn',
-    description: 'Xem thông tin hóa đơn kèm danh sách thanh toán',
-  })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của hóa đơn',
-    example: 'uuid-123',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Trả về chi tiết hóa đơn',
-    type: InvoiceResponseDto,
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền' })
-  @ApiResponse({ status: 404, description: 'Không tìm thấy hóa đơn' })
-  async findOne(
-    @Param('id') id: string,
+  findByBooking(
+    @Uuid('bookingId') bookingId: string,
     @GetAccount('sub') accountId: string,
     @GetAccount('roles') roles: string[],
-  ): Promise<InvoiceResponseDto> {
-    return this.invoiceService.findOne(id, accountId, roles);
+  ): Promise<InvoiceDetailDto> {
+    return this.invoiceService.findByBooking(bookingId, {
+      accountId,
+      roles: roles ?? [],
+    });
   }
 
-  // ==================== UPDATE DISCOUNT ====================
-  @Patch(':id/discount')
-  @HttpCode(200)
-  @Roles('manager', 'admin')
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  @Roles('customer', 'staff', 'manager', 'admin')
   @ApiOperation({
-    summary: 'Cập nhật discount',
+    summary: 'Chi tiết hoá đơn',
     description:
-      'Chỉ manager và admin mới có quyền. Không cập nhật được hóa đơn đã paid',
+      'Dòng phòng, dịch vụ, giảm giá, mọi phiếu thu (kể cả phiếu đã huỷ) và các nút được phép',
   })
-  @ApiParam({
-    name: 'id',
-    description: 'UUID của hóa đơn',
-    example: 'uuid-123',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Cập nhật discount thành công',
-    type: InvoiceResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Hóa đơn đã paid hoặc discount > total_amount',
-  })
-  @ApiResponse({ status: 401, description: 'Chưa đăng nhập' })
-  @ApiResponse({ status: 403, description: 'Không có quyền' })
-  @ApiResponse({ status: 404, description: 'Không tìm thấy hóa đơn' })
-  async updateDiscount(
-    @Param('id') id: string,
-    @Body() dto: UpdateInvoiceDiscountDto,
-  ): Promise<InvoiceResponseDto> {
-    return this.invoiceService.updateDiscount(id, dto);
+  @ApiParam({ name: 'id', description: 'UUID của hoá đơn' })
+  @ApiResponse({ status: 200, type: InvoiceDetailDto })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy hoá đơn' })
+  findOne(
+    @Uuid('id') id: string,
+    @GetAccount('sub') accountId: string,
+    @GetAccount('roles') roles: string[],
+  ): Promise<InvoiceDetailDto> {
+    return this.invoiceService.findOne(id, { accountId, roles: roles ?? [] });
   }
 }

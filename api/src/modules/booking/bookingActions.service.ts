@@ -22,6 +22,11 @@ import {
   validateIdCard,
 } from './booking.rules';
 import {
+  activePaid,
+  belowPaidError,
+  invoiceStatusFor,
+} from '../invoice/invoice.rules';
+import {
   AddServiceDto,
   CheckInDto,
   CheckOutDto,
@@ -310,12 +315,7 @@ export class BookingActionsService {
   async setDiscount(id: string, actor: Actor, discount: number): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await this.lockBooking(tx, id, actor, 'set_discount');
-      const totals = await this.recalcInvoice(tx, id, discount);
-      if (discount > totals.total_amount) {
-        throw new BadRequestException(
-          `Giảm giá không được lớn hơn tổng hoá đơn (${totals.total_amount.toLocaleString('vi-VN')}đ)`,
-        );
-      }
+      await this.recalcInvoice(tx, id, discount);
     }, TX_OPTIONS);
   }
 
@@ -324,7 +324,7 @@ export class BookingActionsService {
    * ============================================================ */
 
   /**
-   * Thu nốt số còn thiếu (không đặt cọc nên thường là toàn bộ hoá đơn), chốt hoá đơn,
+   * Thu nốt số còn thiếu (trừ phần khách đã tạm ứng qua POST /payments), chốt hoá đơn,
    * cộng điểm cho thành viên, chuyển phòng sang "đang dọn".
    * Trả phòng sớm vẫn tính đủ số đêm đã đặt; phụ thu trả muộn nhập bằng dịch vụ.
    */
@@ -341,23 +341,15 @@ export class BookingActionsService {
       const br = await this.bookingRoom(tx, id);
       await tx.$queryRaw`SELECT id FROM "Room" WHERE id = ${br.room_id}::uuid FOR UPDATE`;
 
-      // 1. Tính lại hoá đơn lần cuối, thu phần còn thiếu
+      // 1. Tính lại hoá đơn lần cuối, thu phần còn thiếu (đã trừ tiền tạm ứng, phiếu huỷ không tính)
       const totals = await this.recalcInvoice(tx, id);
-      const invoice = await tx.invoice.findUniqueOrThrow({
-        where: { booking_id: id },
-        select: { id: true, payments: { select: { amount: true } } },
-      });
-      const paid = invoice.payments.reduce(
-        (sum, p) => sum + Number(p.amount),
-        0,
-      );
-      const due = totals.final_amount - paid;
+      const due = totals.final_amount - totals.paid_amount;
 
       const now = new Date();
       if (due > 0) {
         await tx.payment.create({
           data: {
-            invoice_id: invoice.id,
+            invoice_id: totals.invoice_id,
             amount: due,
             payment_method: dto.payment_method,
             reference_number: dto.reference_number || null,
@@ -368,7 +360,7 @@ export class BookingActionsService {
         });
       }
       await tx.invoice.update({
-        where: { id: invoice.id },
+        where: { id: totals.invoice_id },
         data: { status: 'paid' },
       });
 
@@ -501,7 +493,11 @@ export class BookingActionsService {
     return br;
   }
 
-  /** Tính lại hoá đơn từ đầu (phòng + mọi dịch vụ), không cộng dồn -> không bao giờ lệch */
+  /**
+   * Tính lại hoá đơn từ đầu (phòng + mọi dịch vụ), không cộng dồn -> không bao giờ lệch.
+   * Trạng thái hoá đơn cũng tính lại theo số đã thu (phiếu huỷ không tính).
+   * Chặn mọi thay đổi làm tổng phải trả thấp hơn số khách đã tạm ứng.
+   */
   private async recalcInvoice(tx: Db, bookingId: string, newDiscount?: number) {
     const b = await tx.booking.findUniqueOrThrow({
       where: { id: bookingId },
@@ -510,7 +506,13 @@ export class BookingActionsService {
         check_out_date: true,
         booking_rooms: { select: { price_per_night: true } },
         booking_services: { select: { total_price: true } },
-        invoices: { select: { id: true, discount: true } },
+        invoices: {
+          select: {
+            id: true,
+            discount: true,
+            payments: { select: { amount: true, voided_at: true } },
+          },
+        },
       },
     });
     const invoice = b.invoices[0];
@@ -537,8 +539,20 @@ export class BookingActionsService {
       newDiscount ?? Number(invoice.discount),
     );
 
-    await tx.invoice.update({ where: { id: invoice.id }, data: totals });
-    return totals;
+    if (newDiscount !== undefined && newDiscount > totals.total_amount) {
+      throw new BadRequestException(
+        `Giảm giá không được lớn hơn tổng hoá đơn (${totals.total_amount.toLocaleString('vi-VN')}đ)`,
+      );
+    }
+    const paid = activePaid(invoice.payments);
+    const err = belowPaidError(totals.final_amount, paid);
+    if (err) throw new BadRequestException(err);
+
+    await tx.invoice.update({
+      where: { id: invoice.id },
+      data: { ...totals, status: invoiceStatusFor(totals.final_amount, paid) },
+    });
+    return { ...totals, invoice_id: invoice.id, paid_amount: paid };
   }
 
   /** Đổi trạng thái phòng + ghi lịch sử ai đổi, lúc nào */

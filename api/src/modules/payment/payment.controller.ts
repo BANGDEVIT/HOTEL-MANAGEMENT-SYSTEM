@@ -1,119 +1,127 @@
-// payment.controller.ts
 import {
-  Controller,
-  Post,
   Body,
+  Controller,
   Get,
-  Param,
   HttpCode,
   HttpStatus,
-  ForbiddenException,
-  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
 } from '@nestjs/common';
-import { PaymentService } from './payment.service';
-import { CreatePaymentDto } from './dto/create-payment.dto';
-import { PaymentResponseDto } from './dto/payment-response.dto';
-import { Roles } from '../../common/decorators/role-decorator';
-import { GetAccount } from '../../common/decorators/get-account.decorator';
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiParam,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { PrismaService } from '../../prisma/prisma.service';
 import { Throttle } from '@nestjs/throttler';
+import { Roles } from '../../common/decorators/role-decorator';
+import { GetAccount } from '../../common/decorators/get-account.decorator';
+import { PaymentService } from './payment.service';
+import { CreatePaymentDto } from './dto/create-payment.dto';
+import { VoidPaymentDto } from './dto/void-payment.dto';
+import { PaymentResponseDto } from './dto/payment-response.dto';
+import { InvoiceDetailDto } from '../invoice/dto/invoice-response.dto';
 
+/** Chỉ nhận UUID v4, sai định dạng -> 400 trước khi chạm DB */
+const Uuid = (name: string) => Param(name, new ParseUUIDPipe({ version: '4' }));
+
+/**
+ * Phiếu thu.
+ *   POST  /payments           thu tiền (tạm ứng khi đang ở / thu nợ sau trả phòng)
+ *   PATCH /payments/:id/void  quản lý huỷ phiếu nhập nhầm
+ * Thu + huỷ đều trả về CHI TIẾT HOÁ ĐƠN mới nhất -> FE thay luôn, không gọi lại.
+ *
+ * THỨ TỰ ROUTE: /invoice/:invoiceId phải khai báo TRƯỚC /:id.
+ */
 @ApiTags('payments')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @Controller('payments')
 export class PaymentController {
-  constructor(
-    private readonly paymentService: PaymentService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly paymentService: PaymentService) {}
 
   @Post()
   @Roles('staff', 'manager', 'admin')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Tạo thanh toán cho hóa đơn' })
-  @ApiResponse({
-    status: 201,
-    description: 'Thanh toán thành công',
-    type: PaymentResponseDto,
+  @ApiOperation({
+    summary: 'Thu tiền cho hoá đơn',
+    description:
+      'Tạm ứng khi khách đang ở hoặc thu nợ sau khi trả phòng. Không vượt quá số còn phải trả. ' +
+      'Chuyển khoản / ví điện tử bắt buộc có mã giao dịch. Lúc trả phòng dùng POST /bookings/:id/check-out.',
   })
-  async create(@Body() dto: CreatePaymentDto): Promise<PaymentResponseDto> {
-    return this.paymentService.create(dto);
-  }
-
-  @Get(':id')
-  @Roles('customer', 'staff', 'manager', 'admin')
-  @ApiOperation({ summary: 'Xem chi tiết thanh toán' })
-  @ApiResponse({ status: 200, type: PaymentResponseDto })
-  async findOne(
-    @Param('id') id: string,
+  @ApiResponse({ status: 201, type: InvoiceDetailDto })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Vượt số còn lại / đã thu đủ / booking chưa nhận phòng / thiếu mã GD',
+  })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy hoá đơn' })
+  create(
+    @Body() dto: CreatePaymentDto,
     @GetAccount('sub') accountId: string,
     @GetAccount('roles') roles: string[],
-  ): Promise<PaymentResponseDto> {
-    // Lấy payment kèm invoice và booking để kiểm tra quyền
-    const payment = await this.prisma.payment.findUnique({
-      where: { id },
-      include: {
-        invoice: {
-          include: {
-            booking: true,
-          },
-        },
-      },
+  ): Promise<InvoiceDetailDto> {
+    return this.paymentService.create(dto, { accountId, roles: roles ?? [] });
+  }
+
+  @Patch(':id/void')
+  @Roles('manager', 'admin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Huỷ phiếu thu nhập nhầm',
+    description:
+      'Không xoá phiếu: ghi ai huỷ, lúc nào, lý do; hoá đơn được tính lại trạng thái',
+  })
+  @ApiParam({ name: 'id', description: 'UUID của phiếu thu' })
+  @ApiResponse({ status: 200, type: InvoiceDetailDto })
+  @ApiResponse({ status: 400, description: 'Phiếu đã huỷ trước đó' })
+  @ApiResponse({ status: 403, description: 'Không phải quản lý' })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy phiếu thu' })
+  void(
+    @Uuid('id') id: string,
+    @Body() dto: VoidPaymentDto,
+    @GetAccount('sub') accountId: string,
+    @GetAccount('roles') roles: string[],
+  ): Promise<InvoiceDetailDto> {
+    return this.paymentService.void(id, dto.reason, {
+      accountId,
+      roles: roles ?? [],
     });
-    if (!payment) throw new NotFoundException('Không tìm thấy thanh toán');
-
-    // Nếu là customer, kiểm tra quyền sở hữu booking
-    if (roles.includes('customer')) {
-      const customer = await this.prisma.customer.findUnique({
-        where: { account_id: accountId },
-        select: { id: true },
-      });
-      if (!customer || payment.invoice.booking.customer_id !== customer.id) {
-        throw new ForbiddenException('Bạn không có quyền xem thanh toán này');
-      }
-    }
-    // Staff/manager/admin được xem tất cả
-
-    return this.paymentService.findOne(id);
   }
 
   @Get('invoice/:invoiceId')
   @Roles('customer', 'staff', 'manager', 'admin')
-  @ApiOperation({ summary: 'Lấy danh sách thanh toán của hóa đơn' })
+  @ApiOperation({ summary: 'Các phiếu thu của 1 hoá đơn (kể cả phiếu đã huỷ)' })
+  @ApiParam({ name: 'invoiceId', description: 'UUID của hoá đơn' })
   @ApiResponse({ status: 200, type: [PaymentResponseDto] })
-  async findByInvoice(
-    @Param('invoiceId') invoiceId: string,
+  findByInvoice(
+    @Uuid('invoiceId') invoiceId: string,
     @GetAccount('sub') accountId: string,
     @GetAccount('roles') roles: string[],
   ): Promise<PaymentResponseDto[]> {
-    // Kiểm tra quyền truy cập invoice
-    const invoice = await this.prisma.invoice.findUnique({
-      where: { id: invoiceId },
-      include: {
-        booking: true,
-      },
+    return this.paymentService.findByInvoice(invoiceId, {
+      accountId,
+      roles: roles ?? [],
     });
-    if (!invoice) throw new NotFoundException('Không tìm thấy hóa đơn');
+  }
 
-    if (roles.includes('customer')) {
-      const customer = await this.prisma.customer.findUnique({
-        where: { account_id: accountId },
-        select: { id: true },
-      });
-      if (!customer || invoice.booking.customer_id !== customer.id) {
-        throw new ForbiddenException(
-          'Bạn không có quyền xem thanh toán của hóa đơn này',
-        );
-      }
-    }
-
-    return this.paymentService.findByInvoice(invoiceId);
+  @Get(':id')
+  @Roles('customer', 'staff', 'manager', 'admin')
+  @ApiOperation({
+    summary: 'Chi tiết 1 phiếu thu',
+    description: 'Khách chỉ xem được phiếu của mình',
+  })
+  @ApiParam({ name: 'id', description: 'UUID của phiếu thu' })
+  @ApiResponse({ status: 200, type: PaymentResponseDto })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy phiếu thu' })
+  findOne(
+    @Uuid('id') id: string,
+    @GetAccount('sub') accountId: string,
+    @GetAccount('roles') roles: string[],
+  ): Promise<PaymentResponseDto> {
+    return this.paymentService.findOne(id, { accountId, roles: roles ?? [] });
   }
 }
