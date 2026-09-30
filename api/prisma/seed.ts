@@ -159,8 +159,14 @@ async function seedRoomTypes() {
   for (const t of ROOM_TYPES) {
     await prisma.roomType.upsert({
       where: { name: t.name },
-      update: {}, // đã có thì giữ nguyên giá / tiện ích bạn đã sửa
-      create: t,
+      // Đã có: giữ giá / sức chứa bạn đã sửa, chỉ bổ sung diện tích, mô tả
+      // và chuẩn hoá tiện nghi (key cũ 'air_conditioner' không có trong enum Amenity)
+      update: {
+        area: t.area,
+        description: t.description,
+        amenities: t.amenities,
+      },
+      create: { ...t, is_active: t.is_active ?? true },
     });
   }
   const types = await prisma.roomType.findMany({

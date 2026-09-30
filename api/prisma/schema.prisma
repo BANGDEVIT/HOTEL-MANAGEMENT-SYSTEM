@@ -354,15 +354,17 @@ model Room {
 }
 
 model RoomType {
-  id         String   @id @default(uuid()) @db.Uuid
-  name       String   @unique @db.VarChar
-  base_price Decimal
-  capacity   Int
-  bed_type   BedType
-  amenities  Json     @default("[]")
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
-  is_active  Boolean  @default(true)
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar
+  base_price  Decimal // giá hiện tại; booking đã đặt giữ giá cũ ở booking_rooms.price_per_night
+  capacity    Int
+  bed_type    BedType
+  amenities   Json     @default("[]")
+  area        Int? // diện tích m², null = chưa nhập
+  description String?  @db.VarChar(1000) // giới thiệu, hiện trên trang đặt phòng của khách
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  is_active   Boolean  @default(true) // false = ngừng kinh doanh: không nhận booking mới
 
   rooms Room[]
 }

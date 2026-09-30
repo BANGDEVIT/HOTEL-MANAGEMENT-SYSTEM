@@ -198,11 +198,14 @@ export interface RoomTypeSeed {
   base_price: number;
   capacity: number;
   bed_type: BedType;
-  // ⚠ Đổi các key này cho khớp với Amenity trong create-room-type.dto.ts của bạn
+  /** Key phải có trong enum Amenity (src/modules/room-type/dto/create-room-type.dto.ts) */
   amenities: string[];
+  area: number; // m²
+  description: string;
+  is_active?: boolean; // mặc định true
 }
 
-const BASIC = ['wifi', 'air_conditioner', 'tv'];
+const BASIC = ['wifi', 'air_conditioning', 'tv', 'hair_dryer'];
 
 export const ROOM_TYPES: RoomTypeSeed[] = [
   {
@@ -210,49 +213,80 @@ export const ROOM_TYPES: RoomTypeSeed[] = [
     base_price: 550_000,
     capacity: 2,
     bed_type: 'double',
+    area: 20,
     amenities: BASIC,
+    description:
+      'Phòng tiêu chuẩn 1 giường đôi, gọn gàng và yên tĩnh, phù hợp khách công tác hoặc cặp đôi ở ngắn ngày.',
   },
   {
     name: 'Superior',
     base_price: 700_000,
     capacity: 2,
     bed_type: 'twin',
+    area: 24,
     amenities: [...BASIC, 'minibar'],
+    description:
+      'Hai giường đơn, rộng hơn phòng Standard, có minibar. Hợp cho bạn bè hoặc đồng nghiệp đi cùng.',
   },
   {
     name: 'Deluxe',
     base_price: 800_000,
     capacity: 2,
     bed_type: 'twin',
-    amenities: [...BASIC, 'minibar', 'city_view'],
+    area: 28,
+    amenities: [...BASIC, 'minibar', 'safe', 'city_view'],
+    description:
+      'Cửa sổ lớn nhìn ra thành phố, két sắt riêng, góc làm việc thoải mái.',
   },
   {
     name: 'Family',
     base_price: 1_200_000,
     capacity: 4,
     bed_type: 'queen',
-    amenities: [...BASIC, 'minibar', 'bathtub'],
+    area: 36,
+    amenities: [...BASIC, 'minibar', 'safe', 'bathtub'],
+    description:
+      'Phòng rộng cho gia đình 4 người, có bồn tắm. Nhận thêm giường phụ khi cần.',
   },
   {
     name: 'Suite',
     base_price: 1_800_000,
     capacity: 2,
     bed_type: 'king',
-    amenities: [...BASIC, 'minibar', 'bathtub', 'balcony', 'city_view'],
+    area: 45,
+    amenities: [...BASIC, 'minibar', 'safe', 'bathtub', 'balcony', 'city_view'],
+    description:
+      'Phòng khách riêng, ban công và bồn tắm, giường King. Lựa chọn cho kỳ nghỉ đặc biệt.',
   },
   {
     name: 'President',
     base_price: 3_500_000,
     capacity: 2,
     bed_type: 'king',
+    area: 80,
     amenities: [
       ...BASIC,
       'minibar',
+      'safe',
       'bathtub',
       'balcony',
       'city_view',
       'kitchen',
+      'breakfast',
     ],
+    description:
+      'Căn hạng cao nhất trên tầng 5: bếp riêng, ban công lớn, kèm ăn sáng tại phòng.',
+  },
+  // Ngừng kinh doanh, chưa có phòng nào -> màn Loại phòng có ví dụ "ngừng bán" và "xoá được"
+  {
+    name: 'Economy',
+    base_price: 400_000,
+    capacity: 1,
+    bed_type: 'single',
+    area: 14,
+    amenities: ['wifi', 'air_conditioning'],
+    is_active: false,
+    description: 'Phòng đơn giá rẻ cho 1 người. Tạm ngừng để cải tạo.',
   },
 ];
 
