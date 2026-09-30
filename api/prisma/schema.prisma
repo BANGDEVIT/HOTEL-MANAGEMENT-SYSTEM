@@ -172,7 +172,8 @@ model Employee {
   confirmed_bookings Booking[]       @relation("BookingConfirmedBy")
   checked_in_by_me   Booking[]       @relation("BookingCheckedInBy")
   checked_out_by_me  Booking[]       @relation("BookingCheckedOutBy")
-  received_payments  Payment[]
+  received_payments  Payment[]       @relation("PaymentReceivedBy")
+  voided_payments    Payment[]       @relation("PaymentVoidedBy")
   employee_shifts    EmployeeShift[]
   customer_notes     CustomerNote[]
   // room_status_histories RoomStatusHistory[]
@@ -249,19 +250,22 @@ model Booking {
 model Invoice {
   id           String        @id @default(uuid()) @db.Uuid
   booking_id   String        @unique @db.Uuid
-  total_amount Decimal
+  total_amount Decimal // tiền phòng + dịch vụ
   discount     Decimal       @default(0)
-  final_amount Decimal
-  status       InvoiceStatus @default(unpaid)
-  created_at   DateTime      @default(now())
+  final_amount Decimal // phải trả = tổng - giảm giá
+  status       InvoiceStatus @default(unpaid) // tính lại mỗi lần thu / huỷ phiếu thu / đổi tổng
+  created_at   DateTime      @default(now()) // = lúc nhận phòng
   updated_at   DateTime      @updatedAt
 
   booking  Booking   @relation(fields: [booking_id], references: [id])
   payments Payment[]
 
-  @@index([booking_id]) // lấy danh sách phòng của booking
+  @@index([booking_id])
+  @@index([status]) // tab "Còn nợ", "Đã thu đủ"
+  @@index([created_at]) // lọc theo ngày lập
 }
 
+/// Phiếu thu. KHÔNG xoá khi nhập nhầm: quản lý "huỷ phiếu" (voided_at), phiếu vẫn còn để đối soát
 model Payment {
   id               String        @id @default(uuid()) @db.Uuid
   invoice_id       String        @db.Uuid
@@ -273,10 +277,17 @@ model Payment {
   note             String?       @db.VarChar(300)
   created_at       DateTime      @default(now())
 
+  // ----- huỷ phiếu thu (null = phiếu còn hiệu lực) -----
+  voided_at   DateTime?
+  voided_by   String?   @db.Uuid // quản lý huỷ
+  void_reason String?   @db.VarChar(300)
+
   invoice  Invoice   @relation(fields: [invoice_id], references: [id])
-  receiver Employee? @relation(fields: [received_by], references: [id])
+  receiver Employee? @relation("PaymentReceivedBy", fields: [received_by], references: [id])
+  voider   Employee? @relation("PaymentVoidedBy", fields: [voided_by], references: [id])
 
   @@index([invoice_id]) // lấy thanh toán của invoice
+  @@index([paid_at]) // doanh thu theo ngày
 }
 
 model Service {

@@ -428,7 +428,11 @@ async function seedBookings(
                   paid_at: p.paidAt,
                   created_at: p.paidAt,
                   reference_number: p.reference,
+                  note: p.note,
                   received_by: emp(p.receivedBy),
+                  voided_at: p.voided?.at ?? null,
+                  voided_by: p.voided ? emp(p.voided.by) : null,
+                  void_reason: p.voided?.reason ?? null,
                 })),
               },
             },
@@ -445,16 +449,25 @@ async function seedBookings(
 
   const count = (s: string) =>
     plan.bookings.filter((b) => b.status === s).length;
-  const invoices = plan.bookings.filter((b) => b.invoice).length;
-  const payments = plan.bookings.reduce(
-    (n, b) => n + (b.invoice?.payments.length ?? 0),
-    0,
+  const invoices = plan.bookings.flatMap((b) =>
+    b.invoice ? [{ ...b.invoice, booking: b.status }] : [],
   );
+  const payments = invoices.flatMap((inv) => inv.payments);
+  const voided = payments.filter((p) => p.voided).length;
+  const debts = invoices.filter(
+    (inv) => inv.booking === 'checked_out' && inv.status !== 'paid',
+  ).length;
+  const partial = invoices.filter(
+    (inv) => inv.booking === 'checked_in' && inv.status === 'partially_paid',
+  ).length;
   console.log(
     `  ✓ ${plan.bookings.length} booking: ${count('checked_in')} đang ở, ${count('confirmed')} đã xác nhận, ` +
       `${count('pending')} chờ duyệt, ${count('checked_out')} đã trả phòng, ${count('cancelled')} đã huỷ, ${count('no_show')} không đến`,
   );
-  console.log(`  ✓ ${invoices} hoá đơn, ${payments} thanh toán`);
+  console.log(
+    `  ✓ ${invoices.length} hoá đơn (${partial} đang ở đã tạm ứng, ${debts} công nợ), ` +
+      `${payments.length} phiếu thu (${voided} phiếu đã huỷ)`,
+  );
 }
 
 async function seedRoomStatus(

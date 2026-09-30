@@ -13,6 +13,9 @@
  *   3. Hoá đơn = tiền phòng (giá/đêm x số đêm) + dịch vụ - giảm giá.
  *   4. Booking pending / cancelled chưa có hoá đơn.
  *   5. Không thời điểm nào nằm trong tương lai (trừ ngày check-in/out dự kiến).
+ *   6. Trạng thái hoá đơn suy ra từ tiền đã thu (phiếu đã huỷ không tính), giống app:
+ *      đủ -> paid, một phần -> partially_paid, chưa thu -> unpaid.
+ *      Đã trả phòng mà còn thiếu = công nợ (do phiếu thu bị huỷ sau khi trả phòng).
  */
 import type {
   BookingStatus,
@@ -30,6 +33,7 @@ import {
   MANAGERS,
   RECEPTIONISTS,
   SCRIPTED_BOOKINGS,
+  type ScriptedPayment,
   SERVICES,
   TYPE_WEIGHTS,
   VND_PER_POINT,
@@ -66,6 +70,8 @@ export interface PlannedPayment {
   paidAt: Date;
   reference: string | null;
   receivedBy: string; // employee key
+  note: string | null;
+  voided: { by: string; at: Date; reason: string } | null; // by: employee key
 }
 
 export interface PlannedInvoice {
@@ -138,6 +144,7 @@ interface BookingSpec {
   children?: number;
   note?: string;
   cancel?: { by: string; reason: string };
+  payments?: ScriptedPayment[];
 }
 
 const isManager = (key: string) =>
@@ -346,6 +353,7 @@ export function planBookings(input: {
       booking,
       nights,
       spec.randomServices === true,
+      spec.payments,
     );
     return booking;
   };
@@ -369,13 +377,14 @@ export function planBookings(input: {
   }
 
   /**
-   * Không có đặt cọc: hoá đơn tạo lúc CHECK-IN (chưa thanh toán),
-   * chốt và thu tiền một lần lúc CHECK-OUT.
+   * Hoá đơn tạo lúc CHECK-IN (chưa thu), dịch vụ cộng dần, thu nốt lúc CHECK-OUT.
+   * Có thể tạm ứng trước khi đang ở. Kịch bản có thể tự khai phiếu thu (xem ScriptedPayment).
    */
   function buildInvoice(
     b: PlannedBooking,
     nights: number,
-    allowDiscount: boolean,
+    random: boolean,
+    scripted: ScriptedPayment[] | undefined,
   ): PlannedInvoice | null {
     if (b.status !== 'checked_in' && b.status !== 'checked_out') return null;
 
@@ -387,33 +396,109 @@ export function planBookings(input: {
     const total = roomTotal + serviceTotal;
     // Thành viên thỉnh thoảng được giảm 5%
     const discount =
-      allowDiscount && members.has(b.customerKey) && rng.chance(0.35)
+      random && members.has(b.customerKey) && rng.chance(0.35)
         ? roundTo(total * 0.05)
         : 0;
     const final = total - discount;
 
-    // Thu tiền một lần lúc check-out, người thu = người làm check-out
+    const specs =
+      scripted ?? (random ? randomPayments(b, final) : defaultPayments(b));
     const payments: PlannedPayment[] = [];
-    if (b.status === 'checked_out') {
-      const method = rng.weighted([
-        ['cash', 4],
-        ['credit_card', 3],
-        ['bank_transfer', 2],
-        ['e_wallet', 1],
-      ] as const);
-      const paidAt = b.actualOut!;
+    const active = () =>
+      payments.reduce((sum, p) => (p.voided ? sum : sum + p.amount), 0);
+
+    for (const p of specs) {
+      if (p.at === 'out' && b.status !== 'checked_out') {
+        throw new Error(
+          `Booking của "${b.customerKey}" chưa trả phòng, không có phiếu thu lúc trả phòng`,
+        );
+      }
+      const amount = p.amount === 'rest' ? final - active() : p.amount;
+      if (amount <= 0 || active() + amount > final) {
+        throw new Error(
+          `Phiếu thu ${amount}đ của "${b.customerKey}" vượt quá hoá đơn ${final}đ`,
+        );
+      }
+      const base =
+        p.at === 'in'
+          ? new Date(b.actualIn!.getTime() + minutes(rng.int(3, 15)))
+          : b.actualOut!;
+      // Thu lại sau khi huỷ phiếu trước -> phiếu mới phải SAU lúc huỷ
+      const prevVoid = payments[payments.length - 1]?.voided?.at;
+      const paidAt = notFuture(
+        prevVoid && prevVoid > base
+          ? new Date(prevVoid.getTime() + minutes(2))
+          : base,
+      );
+      const receivedBy =
+        p.by ?? (p.at === 'in' ? b.checkedInBy! : b.checkedOutBy!);
+      const voidAt =
+        p.voided &&
+        notFuture(
+          new Date(paidAt.getTime() + minutes(p.voided.afterHours * 60)),
+        );
+      const voided = p.voided
+        ? {
+            by: p.voided.by,
+            reason: p.voided.reason,
+            at:
+              voidAt! > paidAt ? voidAt! : new Date(paidAt.getTime() + 60_000),
+          }
+        : null;
       payments.push({
-        amount: final,
-        method,
+        amount,
+        method: p.method,
         paidAt,
-        reference: reference(method, paidAt),
-        receivedBy: b.checkedOutBy!,
+        reference: reference(p.method, paidAt),
+        receivedBy,
+        note: p.note ?? null,
+        voided,
       });
     }
 
-    const status: InvoiceStatus =
-      b.status === 'checked_out' ? 'paid' : 'unpaid';
-    return { total, discount, final, status, createdAt: b.actualIn!, payments };
+    return {
+      total,
+      discount,
+      final,
+      status: statusFor(final, active()),
+      createdAt: b.actualIn!,
+      payments,
+    };
+  }
+
+  /** Mặc định: đã trả phòng -> thu đủ 1 lần lúc trả phòng; đang ở -> chưa thu */
+  function defaultPayments(b: PlannedBooking): ScriptedPayment[] {
+    if (b.status !== 'checked_out') return [];
+    return [{ amount: 'rest', method: randomMethod(), at: 'out' }];
+  }
+
+  /** Lịch sử ngẫu nhiên: ~15% khách tạm ứng 30-50% lúc nhận phòng, phần còn lại thu lúc trả phòng */
+  function randomPayments(b: PlannedBooking, final: number): ScriptedPayment[] {
+    const rest = defaultPayments(b);
+    if (!rng.chance(0.15)) return rest;
+    const deposit = Math.min(
+      final - 100_000,
+      roundTo((final * rng.int(30, 50)) / 100, 100_000),
+    );
+    if (deposit <= 0) return rest;
+    return [
+      {
+        amount: deposit,
+        method: rng.pick(['cash', 'bank_transfer'] as const),
+        at: 'in',
+        note: 'Tạm ứng',
+      },
+      ...rest,
+    ];
+  }
+
+  function randomMethod(): PaymentMethod {
+    return rng.weighted([
+      ['cash', 4],
+      ['credit_card', 3],
+      ['bank_transfer', 2],
+      ['e_wallet', 1],
+    ] as const);
   }
 
   function reference(method: PaymentMethod, at: Date): string | null {
@@ -443,6 +528,7 @@ export function planBookings(input: {
       children: s.children,
       note: s.note,
       cancel: s.cancel,
+      payments: s.payments,
     });
     if (!b) {
       throw new Error(
@@ -593,6 +679,12 @@ function roomOutcome(
   return { roomStatus, roomEvents };
 }
 
+/** Giống invoiceStatusFor() ở src/modules/invoice/invoice.rules.ts */
+function statusFor(final: number, paid: number): InvoiceStatus {
+  if (paid >= final) return 'paid';
+  return paid > 0 ? 'partially_paid' : 'unpaid';
+}
+
 const notFutureFixed = (d: Date, now: Date) =>
   d > now ? new Date(now.getTime() - minutes(30)) : d;
 
@@ -605,8 +697,9 @@ function customerOutcome(bookings: PlannedBooking[], members: Set<string>) {
     const seen = firstSeen.get(b.customerKey);
     if (!seen || b.createdAt < seen) firstSeen.set(b.customerKey, b.createdAt);
 
-    // Chỉ thành viên tích điểm, chỉ tính booking đã thanh toán đủ
-    if (members.has(b.customerKey) && b.invoice?.status === 'paid') {
+    // Chỉ thành viên tích điểm, cộng lúc trả phòng trên số phải trả (giống app).
+    // Phiếu thu bị huỷ sau đó không trừ lại điểm.
+    if (members.has(b.customerKey) && b.status === 'checked_out' && b.invoice) {
       const add = Math.floor(b.invoice.final / VND_PER_POINT);
       points.set(b.customerKey, (points.get(b.customerKey) ?? 0) + add);
     }

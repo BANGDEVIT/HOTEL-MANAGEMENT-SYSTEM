@@ -10,6 +10,7 @@ import type {
   BookingStatus,
   BookingType,
   IdType,
+  PaymentMethod,
   RoomStatus,
   ServiceCategory,
   ServiceUnit,
@@ -758,6 +759,23 @@ export const CUSTOMERS: CustomerSeed[] = [
 
 /* ============================ Booking kịch bản ============================ */
 
+/**
+ * Phiếu thu viết tay cho booking kịch bản. Không khai báo thì mặc định:
+ * đã trả phòng -> 1 phiếu thu đủ lúc trả phòng; đang ở -> chưa thu gì.
+ */
+export interface ScriptedPayment {
+  /** Số tiền cụ thể, hoặc 'rest' = thu nốt phần còn lại (phiếu đã huỷ không tính) */
+  amount: number | 'rest';
+  method: PaymentMethod;
+  /** 'in' = tạm ứng lúc nhận phòng, 'out' = lúc trả phòng */
+  at: 'in' | 'out';
+  /** Key nhân viên thu. Bỏ trống = người làm thủ tục nhận / trả phòng */
+  by?: string;
+  note?: string;
+  /** Phiếu bị quản lý huỷ sau đó (nhập nhầm, chuyển khoản không về...) */
+  voided?: { by: string; reason: string; afterHours: number };
+}
+
 export interface ScriptedBooking {
   customer: string;
   /** Mỗi phần tử = 1 phòng, ghi tên loại phòng */
@@ -778,6 +796,8 @@ export interface ScriptedBooking {
   note?: string;
   /** Chỉ dùng khi status = cancelled. by: key nhân viên, hoặc 'self' = khách tự huỷ */
   cancel?: { by: string; reason: string };
+  /** Chỉ dùng khi checked_in / checked_out. Xem ScriptedPayment */
+  payments?: ScriptedPayment[];
 }
 
 /**
@@ -799,6 +819,7 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
       ['laundry', 2],
     ],
   },
+  // Tạm ứng bằng chuyển khoản -> hoá đơn "Thu một phần"
   {
     customer: 'james',
     rooms: ['Suite'],
@@ -812,6 +833,14 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
       ['airport', 1],
       ['spa', 1],
       ['beer', 4],
+    ],
+    payments: [
+      {
+        amount: 3_000_000,
+        method: 'bank_transfer',
+        at: 'in',
+        note: 'Tạm ứng trước 2 đêm',
+      },
     ],
   },
   {
@@ -836,6 +865,7 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     children: 2,
     services: [['extra_bed', 3]],
   }, // vừa nhận phòng hôm nay
+  // Lễ tân bấm thu nhầm khi khách chưa đưa tiền -> quản lý huỷ phiếu, hoá đơn về "Chưa thu"
   {
     customer: 'linh',
     rooms: ['Superior', 'Superior'],
@@ -846,6 +876,19 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     adults: 4,
     note: 'Đoàn 2 phòng, thanh toán chung',
     services: [['breakfast', 4]],
+    payments: [
+      {
+        amount: 1_000_000,
+        method: 'cash',
+        at: 'in',
+        by: 'lan',
+        voided: {
+          by: 'bang',
+          reason: 'Nhập nhầm: khách chưa đưa tiền, sẽ thanh toán lúc trả phòng',
+          afterHours: 2,
+        },
+      },
+    ],
   },
   {
     customer: 'kenji',
@@ -882,9 +925,18 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
       ['airport', 1],
       ['spa', 2],
     ],
+    payments: [
+      {
+        amount: 5_000_000,
+        method: 'credit_card',
+        at: 'in',
+        note: 'Quẹt thẻ tạm ứng',
+      },
+    ],
   },
 
   // ----- Trả phòng sáng nay -> phòng "Đang dọn" -----
+  // Chọn nhầm tiền mặt thay vì chuyển khoản -> huỷ phiếu, thu lại đúng phương thức. Hoá đơn vẫn đủ
   {
     customer: 'yen',
     rooms: ['Standard'],
@@ -894,6 +946,20 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     type: 'walk_in',
     by: 'lan',
     services: [['late_checkout', 1]],
+    payments: [
+      {
+        amount: 'rest',
+        method: 'cash',
+        at: 'out',
+        voided: {
+          by: 'bang',
+          reason:
+            'Chọn nhầm phương thức: khách chuyển khoản, không trả tiền mặt',
+          afterHours: 0.5,
+        },
+      },
+      { amount: 'rest', method: 'bank_transfer', at: 'out' },
+    ],
   },
   {
     customer: 'nam',
@@ -906,6 +972,53 @@ export const SCRIPTED_BOOKINGS: ScriptedBooking[] = [
     services: [
       ['breakfast', 3],
       ['snack', 2],
+    ],
+  },
+
+  // ----- Công nợ: đã trả phòng nhưng phiếu thu bị huỷ sau đó -----
+  {
+    customer: 'hoa',
+    rooms: ['Standard'],
+    from: -6,
+    to: -4,
+    status: 'checked_out',
+    type: 'walk_in',
+    by: 'mai',
+    services: [['water', 3]],
+    payments: [
+      {
+        amount: 'rest',
+        method: 'bank_transfer',
+        at: 'out',
+        voided: {
+          by: 'tuan',
+          reason: 'Đối soát sao kê không thấy tiền về, đã gọi khách chuyển lại',
+          afterHours: 20,
+        },
+      },
+    ],
+  },
+  {
+    customer: 'tai',
+    rooms: ['Deluxe'],
+    from: -12,
+    to: -10,
+    status: 'checked_out',
+    type: 'walk_in',
+    by: 'lan',
+    services: [['laundry', 2]],
+    payments: [
+      { amount: 1_000_000, method: 'cash', at: 'in', note: 'Tạm ứng' },
+      {
+        amount: 'rest',
+        method: 'e_wallet',
+        at: 'out',
+        voided: {
+          by: 'bang',
+          reason: 'Giao dịch ví bị hoàn về cho khách',
+          afterHours: 30,
+        },
+      },
     ],
   },
 
@@ -1162,5 +1275,12 @@ export const CUSTOMER_NOTES: {
     author: 'mai',
     content: 'Đoàn 2 phòng, thanh toán chung một hoá đơn.',
     daysAgo: 1,
+  },
+  {
+    customer: 'hoa',
+    author: 'tuan',
+    content:
+      'Còn nợ tiền phòng: chuyển khoản không về tài khoản, đã gọi nhắc khách.',
+    daysAgo: 3,
   },
 ];
