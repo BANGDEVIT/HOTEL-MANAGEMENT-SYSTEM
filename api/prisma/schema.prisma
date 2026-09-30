@@ -68,6 +68,27 @@ enum IdType {
   passport
 }
 
+/// Nhóm dịch vụ: dùng cho tab lọc và icon trên màn Dịch vụ
+enum ServiceCategory {
+  food // ăn uống
+  laundry // giặt ủi
+  minibar
+  surcharge // phụ thu: giường phụ, trả phòng muộn...
+  other
+}
+
+/// Đơn vị tính: "Giặt ủi × 2" là 2 kg hay 2 lần phải rõ ràng
+enum ServiceUnit {
+  turn // lượt
+  portion // suất
+  kg
+  set // bộ
+  bottle // chai
+  can // lon
+  hour // giờ
+  day // ngày
+}
+
 enum BedType {
   single // 1 giường đơn
   double // 1 giường đôi
@@ -259,14 +280,18 @@ model Payment {
 }
 
 model Service {
-  id         String   @id @default(uuid()) @db.Uuid
-  name       String   @db.VarChar
-  price      Decimal
-  is_active  Boolean  @default(true)
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  id         String          @id @default(uuid()) @db.Uuid
+  name       String          @unique @db.VarChar // không cho 2 dịch vụ trùng tên
+  category   ServiceCategory @default(other)
+  unit       ServiceUnit     @default(turn)
+  price      Decimal // giá hiện tại; giá lúc dùng đã chốt ở booking_services.unit_price
+  is_active  Boolean         @default(true)
+  created_at DateTime        @default(now())
+  updated_at DateTime        @updatedAt
 
   booking_services BookingService[]
+
+  @@index([category])
 }
 
 model BookingService {

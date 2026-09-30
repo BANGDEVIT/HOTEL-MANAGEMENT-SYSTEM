@@ -208,13 +208,25 @@ async function seedRooms(typeIds: Map<string, string>): Promise<SeedRoom[]> {
 async function seedServices(): Promise<SeedService[]> {
   const result: SeedService[] = [];
   for (const s of SERVICES) {
-    // Service không có cột unique -> tự tìm theo tên
-    const found =
-      (await prisma.service.findFirst({ where: { name: s.name } })) ??
-      (await prisma.service.create({
-        data: { name: s.name, price: s.price, is_active: s.is_active ?? true },
-      }));
-    result.push({ key: s.key, id: found.id, price: Number(found.price) });
+    const data = {
+      name: s.name,
+      category: s.category,
+      unit: s.unit,
+      price: s.price,
+      is_active: s.is_active ?? true,
+    };
+    // Tìm theo tên mới hoặc tên cũ (lần seed trước) -> cập nhật tại chỗ, giữ nguyên id.
+    // Không tìm thấy thì tạo mới. Nhờ vậy chạy seed nhiều lần không sinh dịch vụ trùng.
+    const existing = await prisma.service.findFirst({
+      where: {
+        name: { in: [s.name, ...(s.legacyName ? [s.legacyName] : [])] },
+      },
+      select: { id: true },
+    });
+    const saved = existing
+      ? await prisma.service.update({ where: { id: existing.id }, data })
+      : await prisma.service.create({ data });
+    result.push({ key: s.key, id: saved.id, price: Number(saved.price) });
   }
   console.log(`  ✓ ${SERVICES.length} dịch vụ`);
   return result;

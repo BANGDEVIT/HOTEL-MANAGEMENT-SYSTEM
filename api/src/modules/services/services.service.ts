@@ -1,486 +1,359 @@
-// services.service.ts
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma, ServiceCategory } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
-import { QueryServiceDto } from './dto/query-service.dto';
-import {
-  AddBookingServiceDto,
-  AddBookingServicesDto,
-} from './dto/add-booking-service.dto';
+import { QueryServiceDto, ServiceSort } from './dto/query-service.dto';
 import {
   PaginatedServiceResponseDto,
   ServiceResponseDto,
+  ServiceStatsDto,
+  ServiceUsageItemDto,
 } from './dto/service-response.dto';
-import { Prisma } from '@prisma/client';
-import {
-  AddMultipleServiceResponseDto,
-  BookingServiceResponseDto,
-} from './dto/booking-service-response.dto';
-import { RedisService } from '../../common/redis/redis.service';
 
+const HOTEL_TZ = 'Asia/Ho_Chi_Minh';
+const DAY_MS = 86_400_000;
+const CATEGORIES = Object.values(ServiceCategory);
+
+const SERVICE_SELECT = {
+  id: true,
+  name: true,
+  category: true,
+  unit: true,
+  price: true,
+  is_active: true,
+  created_at: true,
+  updated_at: true,
+} satisfies Prisma.ServiceSelect;
+
+type ServiceRow = Prisma.ServiceGetPayload<{ select: typeof SERVICE_SELECT }>;
+
+interface Usage {
+  usage30d: number;
+  revenue30d: number;
+  totalUses: number;
+}
+const NO_USAGE: Usage = { usage30d: 0, revenue30d: 0, totalUses: 0 };
+
+/** Thứ tự mặc định của từng kiểu sắp xếp (khi FE không gửi order) */
+const DEFAULT_ORDER: Record<ServiceSort, 'asc' | 'desc'> = {
+  usage: 'desc', // dùng nhiều lên đầu
+  name: 'asc',
+  price: 'asc',
+  created_at: 'desc',
+};
+
+/**
+ * Quản lý danh mục dịch vụ.
+ *
+ * Thêm dịch vụ vào booking / xoá khỏi booking KHÔNG nằm ở đây mà ở BookingActionsService
+ * (POST /bookings/:id/services): ở đó có khoá dòng booking và tính lại hoá đơn từ đầu.
+ * Để 2 nơi cùng sửa hoá đơn thì sớm muộn sẽ lệch tiền.
+ *
+ * Không cache Redis: danh sách có số lượt dùng, mà lượt dùng đổi mỗi khi lễ tân thêm dịch vụ.
+ * Bảng dịch vụ chỉ vài chục dòng nên query thẳng vẫn nhanh.
+ */
 @Injectable()
 export class ServicesService {
-  constructor(
-    private prisma: PrismaService,
-    private redis: RedisService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  // ==================== CREATE ====================
-  async create(dto: CreateServiceDto): Promise<ServiceResponseDto> {
-    // const { name, category, price } = dto;
-    const { name, price } = dto;
+  /* ============================================================
+   *  DANH SÁCH
+   * ============================================================ */
 
-    // Check tên trùng
-    const existing = await this.prisma.service.findFirst({
-      where: { name },
+  async findAll(query: QueryServiceDto): Promise<PaginatedServiceResponseDto> {
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      category,
+      status = 'all',
+      sort = 'usage',
+      order,
+    } = query;
+
+    const where: Prisma.ServiceWhereInput = {
+      ...(category && { category }),
+      ...(status !== 'all' && { is_active: status === 'active' }),
+      ...(search?.trim() && {
+        name: { contains: search.trim(), mode: 'insensitive' },
+      }),
+    };
+
+    // Lấy HẾT dòng khớp rồi sắp xếp + phân trang trong bộ nhớ: sắp theo "lượt dùng" là số tính
+    // từ bảng khác, Prisma không orderBy được. Bảng dịch vụ nhỏ (vài chục dòng) nên không sao.
+    const rows = await this.prisma.service.findMany({
+      where,
+      select: SERVICE_SELECT,
+    });
+    const usage = await this.usageOf(rows.map((r) => r.id));
+    const items = rows.map((r) => this.toDto(r, usage.get(r.id) ?? NO_USAGE));
+
+    const dir = (order ?? DEFAULT_ORDER[sort]) === 'asc' ? 1 : -1;
+    const byName = (a: ServiceResponseDto, b: ServiceResponseDto) =>
+      a.name.localeCompare(b.name, 'vi');
+    items.sort((a, b) => {
+      const diff =
+        sort === 'usage'
+          ? a.usage_30d - b.usage_30d
+          : sort === 'price'
+            ? a.price - b.price
+            : sort === 'created_at'
+              ? a.created_at.getTime() - b.created_at.getTime()
+              : byName(a, b);
+      // Bằng nhau thì xếp theo tên -> thứ tự cố định, chuyển trang không nhảy dòng
+      return diff !== 0 ? diff * dir : byName(a, b);
     });
 
-    if (existing) {
-      throw new ConflictException(`Dịch vụ "${name}" đã tồn tại`);
-    }
-
-    const service = await this.prisma.service.create({
-      // data: { name, category, price },
-      data: { name, price },
-      select: this.serviceSelect(),
-    });
-
-    await this.redis.delByPattern('services:');
-
-    return this.transformService(service);
+    return {
+      data: items.slice((page - 1) * limit, page * limit),
+      total: items.length,
+      page,
+      limit,
+      totalPages: Math.ceil(items.length / limit),
+    };
   }
 
-  // ==================== FIND ALL ====================
-  async findAll(query: QueryServiceDto): Promise<PaginatedServiceResponseDto> {
-    const cacheKey = `services:${JSON.stringify(query)}`;
+  async findOne(id: string): Promise<ServiceResponseDto> {
+    const row = await this.prisma.service.findUnique({
+      where: { id },
+      select: SERVICE_SELECT,
+    });
+    if (!row) throw new NotFoundException('Không tìm thấy dịch vụ');
+    const usage = await this.usageOf([id]);
+    return this.toDto(row, usage.get(id) ?? NO_USAGE);
+  }
 
-    return await this.redis.remember(cacheKey, 600, async () => {
-      const { page = 1, limit = 10, search, is_active } = query;
+  /* ============================================================
+   *  THỐNG KÊ
+   * ============================================================ */
 
-      const skip = (page - 1) * limit;
-      const where: Prisma.ServiceWhereInput = {};
+  async getStats(): Promise<ServiceStatsDto> {
+    const { thisMonth, lastMonth } = this.monthStarts();
+    const since = new Date(Date.now() - 30 * DAY_MS);
+    const revenue = (from: Date, to?: Date) =>
+      this.prisma.bookingService.aggregate({
+        where: { used_at: { gte: from, ...(to && { lt: to }) } },
+        _sum: { total_price: true },
+      });
 
-      // Mặc định chỉ hiện active
-      if (is_active !== undefined) {
-        where.is_active = is_active;
-      } else {
-        where.is_active = true;
-      }
-
-      if (search) {
-        where.name = { contains: search, mode: 'insensitive' };
-      }
-
-      // if (category) {
-      //   where.category = { contains: category, mode: 'insensitive' };
-      // }
-
-      const [servicesRaw, total] = await Promise.all([
-        this.prisma.service.findMany({
-          where,
-          skip,
-          take: limit,
-          select: this.serviceSelect(),
-          orderBy: { name: 'asc' },
+    const [total, active, byCategory, thisRev, lastRev, uses30d, services] =
+      await Promise.all([
+        this.prisma.service.count(),
+        this.prisma.service.count({ where: { is_active: true } }),
+        this.prisma.service.groupBy({
+          by: ['category'],
+          _count: { _all: true },
         }),
-        this.prisma.service.count({ where }),
+        revenue(thisMonth),
+        revenue(lastMonth, thisMonth),
+        this.prisma.bookingService.count({
+          where: { used_at: { gte: since } },
+        }),
+        this.prisma.service.findMany({
+          select: { id: true, name: true, unit: true, is_active: true },
+        }),
       ]);
 
-      return {
-        data: servicesRaw.map((s) => this.transformService(s)),
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      };
-    });
-  }
-
-  // ==================== FIND ONE ====================
-  async findOne(id: string): Promise<ServiceResponseDto> {
-    const service = await this.prisma.service.findUnique({
-      where: { id },
-      select: this.serviceSelect(),
-    });
-
-    if (!service) {
-      throw new NotFoundException('Không tìm thấy dịch vụ');
-    }
-
-    return this.transformService(service);
-  }
-
-  // ==================== UPDATE ====================
-  async update(id: string, dto: UpdateServiceDto): Promise<ServiceResponseDto> {
-    const service = await this.prisma.service.findUnique({
-      where: { id },
-    });
-
-    if (!service) {
-      throw new NotFoundException('Không tìm thấy dịch vụ');
-    }
-
-    // Check tên trùng nếu update name
-    if (dto.name && dto.name !== service.name) {
-      const existing = await this.prisma.service.findFirst({
-        where: { name: dto.name },
+    const usage = await this.usageOf(services.map((s) => s.id));
+    const withUsage: (ServiceUsageItemDto & { is_active: boolean })[] =
+      services.map((s) => {
+        const u = usage.get(s.id) ?? NO_USAGE;
+        return {
+          id: s.id,
+          name: s.name,
+          unit: s.unit,
+          is_active: s.is_active,
+          usage_30d: u.usage30d,
+          revenue_30d: u.revenue30d,
+        };
       });
-      if (existing) {
-        throw new ConflictException(`Dịch vụ "${dto.name}" đã tồn tại`);
-      }
-    }
+    const strip = ({
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      is_active: _ignored,
+      ...rest
+    }: (typeof withUsage)[number]): ServiceUsageItemDto => rest;
 
-    const updated = await this.prisma.service.update({
-      where: { id },
-      data: {
-        ...(dto.name && { name: dto.name }),
-        // ...(dto.category !== undefined && { category: dto.category }),
-        ...(dto.price !== undefined && { price: dto.price }),
-        ...(dto.is_active !== undefined && { is_active: dto.is_active }),
-      },
-      select: this.serviceSelect(),
-    });
-
-    await this.redis.delByPattern('services:');
-
-    return this.transformService(updated);
+    return {
+      total,
+      active,
+      // Nhóm nào chưa có dịch vụ vẫn trả 0 -> FE không phải kiểm tra undefined
+      by_category: Object.fromEntries(
+        CATEGORIES.map((c) => [
+          c,
+          byCategory.find((g) => g.category === c)?._count._all ?? 0,
+        ]),
+      ) as Record<ServiceCategory, number>,
+      revenue_this_month: Number(thisRev._sum.total_price ?? 0),
+      revenue_last_month: Number(lastRev._sum.total_price ?? 0),
+      uses_30d: uses30d,
+      // Top theo DOANH THU: 3 kg giặt ủi và 3 suất massage không so được bằng số lượng
+      top: withUsage
+        .filter((s) => s.usage_30d > 0)
+        .sort((a, b) => b.revenue_30d - a.revenue_30d)
+        .slice(0, 3)
+        .map(strip),
+      unused: withUsage
+        .filter((s) => s.is_active && s.usage_30d === 0)
+        .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+        .slice(0, 5)
+        .map(strip),
+    };
   }
 
-  // ==================== REMOVE ====================
+  /* ============================================================
+   *  THÊM / SỬA / BẬT TẮT / XOÁ
+   * ============================================================ */
+
+  async create(dto: CreateServiceDto): Promise<ServiceResponseDto> {
+    await this.assertNameFree(dto.name);
+    const row = await this.saveOrConflict(() =>
+      this.prisma.service.create({ data: dto, select: SERVICE_SELECT }),
+    );
+    return this.toDto(row, NO_USAGE);
+  }
+
+  /** Đổi giá chỉ ảnh hưởng lần dùng sau: booking_services.unit_price đã chốt giá lúc dùng */
+  async update(id: string, dto: UpdateServiceDto): Promise<ServiceResponseDto> {
+    await this.ensureExists(id);
+    if (dto.name) await this.assertNameFree(dto.name, id);
+
+    await this.saveOrConflict(() =>
+      this.prisma.service.update({ where: { id }, data: dto }),
+    );
+    return this.findOne(id);
+  }
+
+  async setActive(id: string, isActive: boolean): Promise<ServiceResponseDto> {
+    await this.ensureExists(id);
+    await this.prisma.service.update({
+      where: { id },
+      data: { is_active: isActive },
+    });
+    return this.findOne(id);
+  }
+
+  /**
+   * Xoá HẲN, chỉ khi dịch vụ chưa từng được dùng (VD tạo nhầm).
+   * Đã có trong hoá đơn thì xoá sẽ làm mất lịch sử -> báo 409, FE gợi ý "Ngừng bán".
+   */
   async remove(id: string): Promise<void> {
     const service = await this.prisma.service.findUnique({
       where: { id },
+      select: { name: true, _count: { select: { booking_services: true } } },
     });
+    if (!service) throw new NotFoundException('Không tìm thấy dịch vụ');
 
-    if (!service) {
-      throw new NotFoundException('Không tìm thấy dịch vụ');
-    }
-
-    if (!service.is_active) {
-      throw new BadRequestException('Dịch vụ đã bị vô hiệu hóa rồi');
-    }
-
-    await this.prisma.service.update({
-      where: { id },
-      data: { is_active: false },
-    });
-
-    await this.redis.delByPattern('services:');
-  }
-
-  // ==================== ADD TO BOOKING ====================
-  async addToBooking(
-    bookingId: string,
-    dto: AddBookingServiceDto,
-  ): Promise<BookingServiceResponseDto> {
-    const { service_id, quantity, note } = dto;
-
-    // Check booking tồn tại
-    const booking = await this.prisma.booking.findUnique({
-      where: { id: bookingId },
-    });
-
-    if (!booking) {
-      throw new NotFoundException('Không tìm thấy booking');
-    }
-
-    // Chỉ thêm dịch vụ khi booking đang checked_in
-    if (booking.status !== 'checked_in') {
-      throw new BadRequestException(
-        'Chỉ có thể thêm dịch vụ khi khách đang check-in',
+    const uses = service._count.booking_services;
+    if (uses > 0) {
+      throw new ConflictException(
+        `Dịch vụ "${service.name}" đã được dùng ${uses} lần trong hoá đơn, chỉ có thể ngừng bán`,
       );
     }
+    await this.prisma.service.delete({ where: { id } });
+  }
 
-    // Check service tồn tại và active
-    const service = await this.prisma.service.findUnique({
-      where: { id: service_id },
-    });
+  /* ============================================================
+   *  HELPER
+   * ============================================================ */
 
-    if (!service) {
-      throw new NotFoundException('Không tìm thấy dịch vụ');
+  /** Lượt dùng + doanh thu 30 ngày và tổng số lần dùng của nhiều dịch vụ, chỉ 2 query */
+  private async usageOf(ids: string[]): Promise<Map<string, Usage>> {
+    if (!ids.length) return new Map();
+    const since = new Date(Date.now() - 30 * DAY_MS);
+
+    const [recent, allTime] = await Promise.all([
+      this.prisma.bookingService.groupBy({
+        by: ['service_id'],
+        where: { service_id: { in: ids }, used_at: { gte: since } },
+        _sum: { quantity: true, total_price: true },
+      }),
+      this.prisma.bookingService.groupBy({
+        by: ['service_id'],
+        where: { service_id: { in: ids } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const map = new Map<string, Usage>();
+    for (const g of allTime)
+      map.set(g.service_id, { ...NO_USAGE, totalUses: g._count._all });
+    for (const g of recent) {
+      const cur = map.get(g.service_id) ?? { ...NO_USAGE };
+      cur.usage30d = g._sum.quantity ?? 0;
+      cur.revenue30d = Number(g._sum.total_price ?? 0);
+      map.set(g.service_id, cur);
     }
+    return map;
+  }
 
-    if (!service.is_active) {
-      throw new BadRequestException('Dịch vụ đã bị vô hiệu hóa');
-    }
-
-    const unit_price = Number(service.price);
-    const total_price = unit_price * quantity;
-
-    // Tạo booking service
-    const bookingService = await this.prisma.$transaction(async (tx) => {
-      const bs = await tx.bookingService.create({
-        data: {
-          booking_id: bookingId,
-          service_id,
-          quantity,
-          unit_price,
-          total_price,
-          note,
-        },
-        select: {
-          id: true,
-          quantity: true,
-          unit_price: true,
-          total_price: true,
-          note: true,
-          used_at: true,
-          service: {
-            select: {
-              name: true,
-              // category: true,
-            },
-          },
-        },
-      });
-
-      // Cập nhật invoice nếu có
-      const invoice = await tx.invoice.findUnique({
-        where: { booking_id: bookingId },
-      });
-
-      if (invoice) {
-        const newTotalAmount = Number(invoice.total_amount) + total_price;
-        const newFinalAmount = newTotalAmount - Number(invoice.discount);
-
-        await tx.invoice.update({
-          where: { booking_id: bookingId },
-          data: {
-            total_amount: newTotalAmount,
-            final_amount: newFinalAmount,
-          },
-        });
-      }
-
-      return bs;
-    });
-
-    return {
-      id: bookingService.id,
-      service_name: bookingService.service.name,
-      // category: bookingService.service.category,
-      quantity: bookingService.quantity,
-      unit_price: Number(bookingService.unit_price),
-      total_price: Number(bookingService.total_price),
-      note: bookingService.note,
-      used_at: bookingService.used_at,
+  /** Đầu tháng này và tháng trước, theo giờ VN */
+  private monthStarts() {
+    const [y, m] = new Date()
+      .toLocaleDateString('sv-SE', { timeZone: HOTEL_TZ })
+      .split('-')
+      .map(Number);
+    const start = (year: number, month: number) => {
+      const yy = month < 1 ? year - 1 : year;
+      const mm = month < 1 ? 12 : month;
+      return new Date(`${yy}-${String(mm).padStart(2, '0')}-01T00:00:00+07:00`);
     };
+    return { thisMonth: start(y, m), lastMonth: start(y, m - 1) };
   }
 
-  async addToBookingV1(
-    bookingId: string,
-    dto: AddBookingServicesDto,
-  ): Promise<AddMultipleServiceResponseDto> {
-    const { services } = dto;
-
-    // 1. Check booking
-    const booking = await this.prisma.booking.findUnique({
-      where: { id: bookingId },
-    });
-
-    if (!booking) throw new NotFoundException('Không tìm thấy booking');
-
-    if (booking.status !== 'checked_in') {
-      throw new BadRequestException(
-        'Chỉ có thể thêm dịch vụ khi khách đang check-in',
-      );
-    }
-
-    // 2. Check tất cả service tồn tại và active
-    const serviceIds = services.map((s) => s.service_Id);
-
-    const foundServices = await this.prisma.service.findMany({
-      where: { id: { in: serviceIds } },
-    });
-
-    // Check thiếu service nào không
-    if (foundServices.length !== serviceIds.length) {
-      const foundIds = foundServices.map((s) => s.id);
-      const notFoundIds = serviceIds.filter((id) => !foundIds.includes(id));
-      throw new NotFoundException(
-        `Không tìm thấy dịch vụ với id: ${notFoundIds.join(', ')}`,
-      );
-    }
-
-    // Check service nào bị inactive
-    const inactiveServices = foundServices.filter((s) => !s.is_active);
-    if (inactiveServices.length > 0) {
-      throw new BadRequestException(
-        `Dịch vụ đã bị vô hiệu hóa: ${inactiveServices.map((s) => s.name).join(', ')}`,
-      );
-    }
-
-    // 3. Tính giá từng service
-    const serviceMap = new Map(foundServices.map((s) => [s.id, s]));
-
-    const bookingServicesData = services.map((item) => {
-      const service = serviceMap.get(item.service_Id);
-      const unit_price = Number(service.price);
-      return {
-        booking_id: bookingId,
-        service_id: item.service_Id,
-        quantity: item.quantity,
-        unit_price,
-        total_price: unit_price * item.quantity,
-        note: item.note ?? null,
-      };
-    });
-
-    const totalAddedPrice = bookingServicesData.reduce(
-      (sum, s) => sum + s.total_price,
-      0,
-    );
-
-    // 4. Transaction — tạo nhiều booking service + cập nhật invoice
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Tạo tất cả booking services
-      await tx.bookingService.createMany({
-        data: bookingServicesData,
-      });
-
-      // Lấy lại data vừa tạo (createMany không trả về data)
-      const createdServices = await tx.bookingService.findMany({
-        where: { booking_id: bookingId },
-        orderBy: { used_at: 'desc' },
-        take: services.length,
-        select: {
-          id: true,
-          quantity: true,
-          unit_price: true,
-          total_price: true,
-          note: true,
-          used_at: true,
-          service: {
-            select: { name: true },
-          },
-        },
-      });
-
-      // Cập nhật invoice
-      const invoice = await tx.invoice.findUnique({
-        where: { booking_id: bookingId },
-      });
-
-      let newTotalAmount = 0;
-      let newFinalAmount = 0;
-
-      if (invoice) {
-        newTotalAmount = Number(invoice.total_amount) + totalAddedPrice;
-        newFinalAmount = newTotalAmount - Number(invoice.discount);
-
-        await tx.invoice.update({
-          where: { booking_id: bookingId },
-          data: {
-            total_amount: newTotalAmount,
-            final_amount: newFinalAmount,
-          },
-        });
-      }
-
-      return {
-        createdServices,
-        newTotalAmount,
-        newFinalAmount,
-        hasInvoice: !!invoice,
-      };
-    });
-
-    return {
-      booking_services: result.createdServices.map((bs) => ({
-        id: bs.id,
-        service_name: bs.service.name,
-        quantity: bs.quantity,
-        unit_price: Number(bs.unit_price),
-        total_price: Number(bs.total_price),
-        note: bs.note,
-        used_at: bs.used_at,
-      })),
-      total_added: services.length,
-      invoice_updated: result.hasInvoice,
-      new_total_amount: result.newTotalAmount,
-      new_final_amount: result.newFinalAmount,
-    };
-  }
-
-  // ==================== REMOVE FROM BOOKING ====================
-  async removeFromBooking(
-    bookingId: string,
-    bookingServiceId: string,
-  ): Promise<void> {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id: bookingId },
-    });
-
-    if (!booking) {
-      throw new NotFoundException('Không tìm thấy booking');
-    }
-
-    if (booking.status !== 'checked_in') {
-      throw new BadRequestException(
-        'Chỉ có thể xóa dịch vụ khi khách đang check-in',
-      );
-    }
-
-    const bookingService = await this.prisma.bookingService.findFirst({
+  /** Trùng tên không phân biệt hoa thường: "giặt ủi" và "Giặt Ủi" là 1 dịch vụ */
+  private async assertNameFree(name: string, excludeId?: string) {
+    const dup = await this.prisma.service.findFirst({
       where: {
-        id: bookingServiceId,
-        booking_id: bookingId,
+        name: { equals: name, mode: 'insensitive' },
+        ...(excludeId && { id: { not: excludeId } }),
       },
+      select: { name: true },
     });
+    if (dup) throw new ConflictException(`Đã có dịch vụ "${dup.name}"`);
+  }
 
-    if (!bookingService) {
-      throw new NotFoundException('Không tìm thấy dịch vụ trong booking');
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.bookingService.delete({
-        where: { id: bookingServiceId },
-      });
-
-      // Cập nhật lại invoice
-      const invoice = await tx.invoice.findUnique({
-        where: { booking_id: bookingId },
-      });
-
-      if (invoice) {
-        const newTotalAmount =
-          Number(invoice.total_amount) - Number(bookingService.total_price);
-        const newFinalAmount = newTotalAmount - Number(invoice.discount);
-
-        await tx.invoice.update({
-          where: { booking_id: bookingId },
-          data: {
-            total_amount: newTotalAmount,
-            final_amount: newFinalAmount < 0 ? 0 : newFinalAmount,
-          },
-        });
+  /** 2 người cùng tạo 1 tên cùng lúc: assertNameFree đều qua, DB (@unique) chặn người sau -> P2002 */
+  private async saveOrConflict<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException('Tên dịch vụ đã tồn tại');
       }
+      throw err;
+    }
+  }
+
+  private async ensureExists(id: string) {
+    const found = await this.prisma.service.findUnique({
+      where: { id },
+      select: { id: true },
     });
+    if (!found) throw new NotFoundException('Không tìm thấy dịch vụ');
   }
 
-  // ==================== HELPERS ====================
-  private serviceSelect() {
+  private toDto(r: ServiceRow, u: Usage): ServiceResponseDto {
     return {
-      id: true,
-      name: true,
-      // category: true,
-      price: true,
-      is_active: true,
-      created_at: true,
-      updated_at: true,
-    };
-  }
-
-  private transformService(service: any): ServiceResponseDto {
-    return {
-      ...service,
-      price: Number(service.price),
+      id: r.id,
+      name: r.name,
+      category: r.category,
+      unit: r.unit,
+      price: Number(r.price),
+      is_active: r.is_active,
+      usage_30d: u.usage30d,
+      revenue_30d: u.revenue30d,
+      total_uses: u.totalUses,
+      can_delete: u.totalUses === 0,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
     };
   }
 }

@@ -11,6 +11,8 @@ import type {
   BookingType,
   IdType,
   RoomStatus,
+  ServiceCategory,
+  ServiceUnit,
   ShiftName,
 } from '@prisma/client';
 
@@ -295,6 +297,10 @@ export const TYPE_WEIGHTS: [string, number][] = [
 export interface ServiceSeed {
   key: string;
   name: string;
+  /** Tên cũ ở các lần seed trước: tìm thấy thì ĐỔI TÊN, không tạo bản ghi mới bị trùng */
+  legacyName?: string;
+  category: ServiceCategory;
+  unit: ServiceUnit;
   price: number;
   is_active?: boolean;
   /** Số lượng mỗi lần dùng: 'per_night' = theo số đêm (VD ăn sáng) */
@@ -305,30 +311,106 @@ export const SERVICES: ServiceSeed[] = [
   {
     key: 'breakfast',
     name: 'Ăn sáng buffet',
+    category: 'food',
+    unit: 'portion',
     price: 150_000,
     qty: 'per_night',
   },
-  { key: 'laundry', name: 'Giặt ủi (kg)', price: 50_000, qty: [1, 4] },
-  { key: 'airport', name: 'Đưa đón sân bay', price: 350_000, qty: [1, 2] },
-  { key: 'motorbike', name: 'Thuê xe máy (ngày)', price: 150_000, qty: [1, 3] },
-  { key: 'water', name: 'Minibar - Nước suối', price: 20_000, qty: [1, 6] },
-  { key: 'beer', name: 'Minibar - Bia', price: 35_000, qty: [1, 6] },
-  { key: 'snack', name: 'Minibar - Snack', price: 30_000, qty: [1, 3] },
-  { key: 'spa', name: 'Massage 60 phút', price: 450_000, qty: [1, 2] },
   {
-    key: 'extra_bed',
-    name: 'Phụ thu giường phụ',
-    price: 300_000,
-    qty: 'per_night',
+    key: 'lunch_set',
+    name: 'Cơm trưa set menu',
+    category: 'food',
+    unit: 'portion',
+    price: 180_000,
+    qty: [1, 2],
   },
-  { key: 'late_checkout', name: 'Trả phòng muộn', price: 200_000, qty: [1, 1] },
+  {
+    key: 'laundry',
+    name: 'Giặt ủi',
+    legacyName: 'Giặt ủi (kg)',
+    category: 'laundry',
+    unit: 'kg',
+    price: 50_000,
+    qty: [1, 4],
+  },
   {
     key: 'dry_clean',
     name: 'Giặt hấp',
+    category: 'laundry',
+    unit: 'set',
     price: 80_000,
     qty: [1, 2],
     is_active: false,
   }, // ngưng cung cấp
+  {
+    key: 'water',
+    name: 'Nước suối',
+    legacyName: 'Minibar - Nước suối',
+    category: 'minibar',
+    unit: 'bottle',
+    price: 20_000,
+    qty: [1, 6],
+  },
+  {
+    key: 'beer',
+    name: 'Bia',
+    legacyName: 'Minibar - Bia',
+    category: 'minibar',
+    unit: 'can',
+    price: 35_000,
+    qty: [1, 6],
+  },
+  {
+    key: 'snack',
+    name: 'Snack',
+    legacyName: 'Minibar - Snack',
+    category: 'minibar',
+    unit: 'turn',
+    price: 30_000,
+    qty: [1, 3],
+  },
+  {
+    key: 'extra_bed',
+    name: 'Giường phụ',
+    legacyName: 'Phụ thu giường phụ',
+    category: 'surcharge',
+    unit: 'day',
+    price: 300_000,
+    qty: 'per_night',
+  },
+  {
+    key: 'late_checkout',
+    name: 'Trả phòng muộn',
+    category: 'surcharge',
+    unit: 'hour',
+    price: 100_000,
+    qty: [1, 3],
+  },
+  {
+    key: 'airport',
+    name: 'Đưa đón sân bay',
+    category: 'other',
+    unit: 'turn',
+    price: 350_000,
+    qty: [1, 2],
+  },
+  {
+    key: 'motorbike',
+    name: 'Thuê xe máy',
+    legacyName: 'Thuê xe máy (ngày)',
+    category: 'other',
+    unit: 'day',
+    price: 150_000,
+    qty: [1, 3],
+  },
+  {
+    key: 'spa',
+    name: 'Massage 60 phút',
+    category: 'other',
+    unit: 'turn',
+    price: 450_000,
+    qty: [1, 2],
+  },
 ];
 
 /* ============================ Khách hàng ============================ */

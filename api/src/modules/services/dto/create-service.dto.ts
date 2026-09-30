@@ -1,30 +1,44 @@
-// dto/create-service.dto.ts
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
+import { ServiceCategory, ServiceUnit } from '@prisma/client';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsEnum,
+  IsInt,
   IsNotEmpty,
-  IsNumber,
-  IsOptional,
   IsString,
+  Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 
+/** "  Giặt   ủi " -> "Giặt ủi": bỏ khoảng trắng thừa để kiểm tra trùng tên cho đúng */
+const cleanName = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value;
+
 export class CreateServiceDto {
-  @ApiProperty({ example: 'Dịch vụ spa', description: 'Tên dịch vụ' })
-  @IsNotEmpty({ message: 'Tên dịch vụ không được để trống' })
+  @ApiProperty({ example: 'Giặt ủi', maxLength: 100 })
+  @Transform(cleanName)
   @IsString()
+  @IsNotEmpty({ message: 'Nhập tên dịch vụ' })
+  @MaxLength(100, { message: 'Tên dịch vụ tối đa 100 ký tự' })
   name: string;
 
-  @ApiPropertyOptional({
-    example: 'spa',
-    description: 'Danh mục: spa, food, laundry, transport...',
-  })
-  @IsOptional()
-  @IsString()
-  category?: string;
+  @ApiProperty({ enum: ServiceCategory, example: ServiceCategory.laundry })
+  @IsEnum(ServiceCategory, { message: 'Nhóm dịch vụ không hợp lệ' })
+  category: ServiceCategory;
 
-  @ApiProperty({ example: 200000, description: 'Giá dịch vụ (VNĐ)' })
-  @IsNotEmpty({ message: 'Giá dịch vụ không được để trống' })
-  @IsNumber({}, { message: 'Giá dịch vụ phải là số' })
-  @Min(0, { message: 'Giá dịch vụ không được âm' })
+  @ApiProperty({
+    enum: ServiceUnit,
+    example: ServiceUnit.kg,
+    description: 'Đơn vị tính',
+  })
+  @IsEnum(ServiceUnit, { message: 'Đơn vị tính không hợp lệ' })
+  unit: ServiceUnit;
+
+  @ApiProperty({ example: 50000, description: 'Đơn giá (VNĐ), số nguyên' })
+  @Type(() => Number)
+  @IsInt({ message: 'Đơn giá phải là số nguyên' })
+  @Min(0, { message: 'Đơn giá không được âm' })
+  @Max(100_000_000, { message: 'Đơn giá quá lớn' })
   price: number;
 }
