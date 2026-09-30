@@ -118,6 +118,7 @@ const DETAIL_SELECT = {
       discount: true,
       final_amount: true,
       payments: {
+        where: { voided_at: null }, // phiếu đã huỷ chỉ hiện ở màn Hoá đơn
         orderBy: { paid_at: 'asc' },
         select: {
           id: true,

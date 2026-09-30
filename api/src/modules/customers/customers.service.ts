@@ -338,7 +338,7 @@ export class CustomersService {
       this.stayInfo([r.id]),
       // Tổng chi = tiền ĐÃ THU thật, không phải tổng hoá đơn (có hoá đơn chưa trả)
       this.prisma.payment.aggregate({
-        where: { invoice: { booking: { customer_id: r.id } } },
+        where: { invoice: { booking: { customer_id: r.id } }, voided_at: null }, // phiếu đã huỷ không tính
         _sum: { amount: true },
       }),
     ]);
@@ -409,7 +409,7 @@ export class CustomersService {
         })),
         // Đã huỷ thì 0. Có hoá đơn thì lấy hoá đơn, chưa có thì ước tính theo giá phòng.
         amount:
-          b.status === 'cancelled' || b.status === 'no_show'
+          b.status === 'cancelled'
             ? 0
             : b.invoices.length
               ? invoiceTotal

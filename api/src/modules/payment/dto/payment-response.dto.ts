@@ -1,39 +1,37 @@
-// dto/payment-response.dto.ts
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { PaymentMethod } from '@prisma/client';
+import { ApiProperty } from '@nestjs/swagger';
+import { InvoiceStatus, PaymentMethod } from '@prisma/client';
 
+/** 1 phiếu thu kèm tình trạng hoá đơn hiện tại */
 export class PaymentResponseDto {
-  @ApiProperty({ example: 'uuid-123' })
-  id: string;
+  @ApiProperty() id: string;
+  @ApiProperty() invoice_id: string;
+  @ApiProperty({ example: 'HD-260929-0012' }) invoice_code: string;
+  @ApiProperty({ example: 500000 }) amount: number;
+  @ApiProperty({ enum: PaymentMethod }) payment_method: PaymentMethod;
+  @ApiProperty({ nullable: true, example: 'FT26093012345' }) reference_number:
+    | string
+    | null;
+  @ApiProperty({ nullable: true }) note: string | null;
+  @ApiProperty() paid_at: Date;
+  @ApiProperty() created_at: Date;
+  @ApiProperty({
+    nullable: true,
+    description: 'Tên nhân viên thu. Khách xem thì null',
+  })
+  received_by: string | null;
 
-  @ApiProperty({ example: 'uuid-invoice' })
-  invoice_id: string;
+  @ApiProperty({ nullable: true, description: 'null = phiếu còn hiệu lực' })
+  voided_at: Date | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'Tên quản lý huỷ. Khách xem thì null',
+  })
+  voided_by: string | null;
+  @ApiProperty({ nullable: true }) void_reason: string | null;
 
-  @ApiProperty({ example: 500000 })
-  amount: number;
-
-  @ApiProperty({ example: 'cash', enum: PaymentMethod })
-  payment_method: PaymentMethod;
-
-  @ApiPropertyOptional({ example: 'TXN123456' })
-  reference_number: string | null; // nullable — tiền mặt không có mã GD
-
-  @ApiProperty({ example: '2026-05-12T00:00:00.000Z' })
-  paid_at: Date;
-
-  @ApiProperty({ example: '2026-05-12T00:00:00.000Z' })
-  created_at: Date;
-
-  // Thông tin invoice sau khi thanh toán
-  @ApiProperty({ example: 'unpaid' })
-  invoice_status: string;
-
-  @ApiProperty({ example: 900000 })
-  invoice_final_amount: number;
-
-  @ApiProperty({ example: 500000 })
+  @ApiProperty({ enum: InvoiceStatus }) invoice_status: InvoiceStatus;
+  @ApiProperty({ example: 900000 }) invoice_final_amount: number;
+  @ApiProperty({ example: 500000, description: 'Tổng các phiếu còn hiệu lực' })
   total_paid: number;
-
-  @ApiProperty({ example: 400000 })
-  remaining: number;
+  @ApiProperty({ example: 400000 }) remaining: number;
 }
