@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { bookingApi } from "../../../api/bookingApi";
 import { errorMessage } from "../../../utils/errorMessage";
 import type { BookingDetail, ServiceOption } from "../../../types/booking";
+import { UNIT_LABELS } from "../../../types/service";
 import { bookingSubtitle, formatAmount } from "../utils/format";
 import { BTN_DANGER, BTN_PRIMARY, BTN_SECONDARY, INPUT } from "./styles";
 import { DialogShell, Field, Stepper } from "./ui";
@@ -267,7 +268,7 @@ export function AddServiceDialog({ booking, onClose, onDone }: BaseProps) {
           quantity,
           note: note.trim() || undefined,
         }),
-      `Đã thêm ${picked.name} × ${quantity}`,
+      `Đã thêm ${picked.name} × ${quantity} ${UNIT_LABELS[picked.unit]}`,
       "Không thêm được dịch vụ",
       onDone,
     );
@@ -344,7 +345,7 @@ export function AddServiceDialog({ booking, onClose, onDone }: BaseProps) {
                     {s.name}
                   </span>
                   <span className="block text-[12px] tabular-nums text-ink-muted">
-                    {formatAmount(s.price)}
+                    {formatAmount(s.price)} / {UNIT_LABELS[s.unit]}
                   </span>
                 </button>
               ))}
@@ -361,7 +362,9 @@ export function AddServiceDialog({ booking, onClose, onDone }: BaseProps) {
             className={INPUT}
           />
         </Field>
-        <Field label="Số lượng">
+        <Field
+          label={picked ? `Số lượng (${UNIT_LABELS[picked.unit]})` : "Số lượng"}
+        >
           <Stepper
             value={quantity}
             min={1}
