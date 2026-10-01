@@ -1,121 +1,60 @@
-import { roomTypeApi } from "@/api/roomTypeApi";
-import type {
-  CreateRoomTypePayload,
-  RoomType,
-  RoomTypeFilters,
-  UpdateRoomTypePayload,
-} from "@/types/roomType";
-import { toast } from "sonner";
 import { create } from "zustand";
-import type { RoomTypeStats } from "../components/OccupancyBar";
-import { roomApi } from "@/api/roomApi";
+import { toast } from "sonner";
+import { roomTypeApi } from "../../../api/roomTypeApi";
+import type { RoomTypeFilters, RoomTypeItem } from "../../../types/roomType";
+import { errorMessage } from "../../../utils/errorMessage";
 
-interface RoomTypeState {
-  roomTypes: RoomType[];
-  total: number;
-  totalPages: number;
-  loading: boolean;
-  filters: RoomTypeFilters;
+/**
+ * Khách sạn chỉ vài loại phòng -> tải HẾT 1 lần, tìm / lọc / sắp xếp ngay trên FE
+ * (xem visibleRoomTypes trong utils). Không gọi lại API mỗi lần gõ tìm kiếm.
+ */
 
-  setFilters: (f: Partial<RoomTypeFilters>) => void;
-  fetchRoomTypes: () => Promise<void>;
-  createRoomType: (payload: CreateRoomTypePayload) => Promise<void>;
-  updateRoomType: (id: string, payload: UpdateRoomTypePayload) => Promise<void>;
-  deleteRoomType: (id: string) => Promise<void>;
-  roomStats: Record<string, RoomTypeStats>;
-  fetchRoomStats: () => Promise<void>;
-}
-
-const showError = (e: any, fallback: string) => {
-  toast.error(fallback ?? e?.reponse?.data?.message ?? fallback);
+export const DEFAULT_FILTERS: RoomTypeFilters = {
+  search: "",
+  status: "all",
+  sort: "price_asc",
 };
 
-let requiredId = 0;
+interface RoomTypeState {
+  items: RoomTypeItem[];
+  filters: RoomTypeFilters;
+  loading: boolean;
+  lastUpdated: Date | null;
 
-export const useRoomTypeStore = create<RoomTypeState>((set, get) => ({
-  roomTypes: [],
-  total: 0,
-  totalPages: 1,
+  fetch: () => Promise<void>;
+  setFilters: (patch: Partial<RoomTypeFilters>) => void;
+  resetFilters: () => void;
+  /** Thêm mới hoặc thay đúng 1 loại bằng bản BE trả về */
+  upsert: (item: RoomTypeItem) => void;
+  remove: (id: string) => void;
+}
+
+export const useRoomTypeStore = create<RoomTypeState>((set) => ({
+  items: [],
+  filters: DEFAULT_FILTERS,
   loading: false,
-  filters: { search: "", page: 1, limit: 10 },
-  roomStats: {},
+  lastUpdated: null,
 
-  setFilters: (f) => {
-    set((s) => ({ filters: { ...s.filters, ...f, page: f.page ?? 1 } }));
-    get().fetchRoomTypes(); // không dùng await vì không cần chờ nó hoàn thành khi nào cho nó chạy ngầm
-  },
-
-  fetchRoomTypes: async () => {
-    const current = ++requiredId;
+  fetch: async () => {
     set({ loading: true });
     try {
-      const res = await roomTypeApi.getAll(get().filters);
-      if (current !== requiredId) return;
-      set({ roomTypes: res.data, total: res.total, totalPages: res.totalPages });
-    } catch (e: any) {
-      if (current !== requiredId) {
-        return;
-      }
-      showError(e, "Không tải được danh sách phòng");
+      set({ items: await roomTypeApi.listForManage(), lastUpdated: new Date() });
+    } catch (err) {
+      toast.error(errorMessage(err, "Không tải được loại phòng"));
     } finally {
-      if (current === requiredId) {
-        set({ loading: false });
-      }
-    }
-  },
-
-  createRoomType: async (payload: CreateRoomTypePayload) => {
-    try {
-      await roomTypeApi.create(payload);
       set({ loading: false });
-      await get().fetchRoomTypes();
-    } catch (e: any) {
-      showError(e, "Không tạo được loại phòng");
     }
   },
 
-  updateRoomType: async (id: string, payload: UpdateRoomTypePayload) => {
-    try {
-      await roomTypeApi.update(id, payload);
-      set({ loading: false });
-      await get().fetchRoomTypes();
-    } catch (e: any) {
-      showError(e, "Không cập nhật được loài phông");
-    }
-  },
+  setFilters: (patch) => set((s) => ({ filters: { ...s.filters, ...patch } })),
+  resetFilters: () => set({ filters: DEFAULT_FILTERS }),
 
-  deleteRoomType: async (id: string) => {
-    try {
-      await roomTypeApi.remove(id);
-      set({ loading: false });
-      await get().fetchRoomTypes();
-    } catch (e: any) {
-      showError(e, "Không thể xóa loại phòng");
-    }
-  },
+  upsert: (item) =>
+    set((s) => ({
+      items: s.items.some((x) => x.id === item.id)
+        ? s.items.map((x) => (x.id === item.id ? item : x))
+        : [...s.items, item],
+    })),
 
-  // Đếm phòng theo loại ở FE — đủ dùng khi khách sạn vài chục đến vài trăm phòng.
-  // Nhiều hơn thế nên chuyển sang để BE đếm sẵn.
-  fetchRoomStats: async () => {
-    try {
-      const res = await roomApi.getAll({ page: 1, limit: 500 });
-      const stats: Record<string, RoomTypeStats> = {};
-
-      for (const room of res.data) {
-        const s = (stats[room.room_type.id] ??= {
-          total: 0,
-          available: 0,
-          occupied: 0,
-          cleaning: 0,
-          maintenance: 0,
-        });
-        s.total += 1;
-        if (room.status in s) s[room.status as keyof RoomTypeStats] += 1;
-      }
-
-      set({ roomStats: stats });
-    } catch {
-      // Thống kê là thông tin phụ — lỗi thì bỏ qua, không làm phiền bằng toast
-    }
-  },
+  remove: (id) => set((s) => ({ items: s.items.filter((x) => x.id !== id) })),
 }));

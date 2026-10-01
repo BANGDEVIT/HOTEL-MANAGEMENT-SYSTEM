@@ -1,100 +1,138 @@
-import type { BedType } from "./room";
+/**
+ * Kiểu dữ liệu loại phòng — khớp 1-1 với response-room-type.dto.ts ở BE.
+ */
+export type BedType = "single" | "double" | "twin" | "queen" | "king";
 
+/** Khớp enum Amenity ở BE (create-room-type.dto.ts) */
 export type Amenity =
   | "wifi"
   | "tv"
   | "air_conditioning"
   | "minibar"
-  | "bathtub"
   | "balcony"
   | "pool"
   | "gym"
   | "breakfast"
   | "parking"
   | "safe"
-  | "hair_dryer";
+  | "hair_dryer"
+  | "bathtub"
+  | "city_view"
+  | "kitchen";
 
-export interface RoomType {
+export type RoomTypeStatusFilter = "all" | "active" | "inactive";
+export type RoomTypeSort =
+  | "price_asc"
+  | "price_desc"
+  | "occupancy"
+  | "revenue"
+  | "name";
+
+/* ============================ Dữ liệu từ BE ============================ */
+
+export interface RoomCountByStatus {
+  total: number;
+  available: number;
+  occupied: number;
+  cleaning: number;
+  maintenance: number;
+  inactive: number;
+}
+
+/** 1 loại phòng ở màn quản lý (GET /room-types/manage) */
+export interface RoomTypeItem {
   id: string;
   name: string;
   base_price: number;
   capacity: number;
   bed_type: BedType;
   amenities: Amenity[];
+  area: number | null; // m²
+  description: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+
+  rooms: RoomCountByStatus;
+  occupancy_30d: number; // %
+  revenue_30d: number; // tiền phòng, không gồm dịch vụ
+  upcoming_bookings: number;
+  max_upcoming_guests: number; // sức chứa tối thiểu được phép
+  can_delete: boolean; // chưa có phòng nào
 }
 
-export interface RoomTypeListResponse {
-  data: RoomType[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
+/* ============================ Dữ liệu FE gửi lên ============================ */
 
-export interface RoomTypeFilters {
-  search: string;
-  page: number;
-  limit: number;
-}
-
-export interface CreateRoomTypePayload {
+export interface RoomTypeInput {
   name: string;
   base_price: number;
   capacity: number;
   bed_type: BedType;
-  amenities?: Amenity[];
+  amenities: Amenity[];
+  area: number | null;
+  description: string | null;
 }
 
-export type UpdateRoomTypePayload = Partial<CreateRoomTypePayload>;
+export interface RoomTypeFilters {
+  search: string;
+  status: RoomTypeStatusFilter;
+  sort: RoomTypeSort;
+}
 
-export const AMENITY_LABELS: Record<Amenity, string> = {
-  wifi: "WiFi",
-  tv: "TV",
-  air_conditioning: "Điều hoà",
-  minibar: "Minibar",
-  bathtub: "Bồn tắm",
-  balcony: "Ban công",
-  pool: "Hồ bơi",
-  gym: "Phòng gym",
-  breakfast: "Bữa sáng",
-  parking: "Chỗ đỗ xe",
-  safe: "Két an toàn",
-  hair_dryer: "Máy sấy tóc",
+/* ============================ Nhãn hiển thị ============================ */
+
+export const BED_TYPE_LABELS: Record<BedType, string> = {
+  single: "1 giường đơn",
+  double: "1 giường đôi",
+  twin: "2 giường đơn",
+  queen: "1 giường Queen",
+  king: "1 giường King",
 };
 
-/** Nhóm tiện nghi để form dễ đọc hơn danh sách phẳng 12 mục */
-export const AMENITY_GROUPS: { title: string; items: Amenity[] }[] = [
-  {
-    title: "Trong phòng",
-    items: ["wifi", "tv", "air_conditioning", "minibar", "safe", "hair_dryer"],
-  },
-  { title: "Không gian", items: ["bathtub", "balcony"] },
-  { title: "Tiện ích chung", items: ["pool", "gym", "breakfast", "parking"] },
+/** Nhãn ngắn cho nút chọn trong form */
+export const BED_TYPE_SHORT: Record<BedType, string> = {
+  single: "Đơn",
+  double: "Đôi",
+  twin: "2 đơn",
+  queen: "Queen",
+  king: "King",
+};
+
+export const BED_TYPES = Object.keys(BED_TYPE_LABELS) as BedType[];
+
+/** Thứ tự hiển thị: tiện nghi trong phòng trước, dịch vụ chung của khách sạn sau */
+export const AMENITY_LABELS: Record<Amenity, string> = {
+  wifi: "Wi-Fi",
+  air_conditioning: "Điều hoà",
+  tv: "TV",
+  hair_dryer: "Máy sấy tóc",
+  minibar: "Minibar",
+  safe: "Két sắt",
+  bathtub: "Bồn tắm",
+  balcony: "Ban công",
+  city_view: "View thành phố",
+  kitchen: "Bếp",
+  breakfast: "Ăn sáng",
+  pool: "Hồ bơi",
+  gym: "Phòng gym",
+  parking: "Đỗ xe",
+};
+
+export const AMENITIES = Object.keys(AMENITY_LABELS) as Amenity[];
+
+export const ROOM_TYPE_STATUS_TABS: {
+  value: RoomTypeStatusFilter;
+  label: string;
+}[] = [
+  { value: "all", label: "Tất cả" },
+  { value: "active", label: "Đang kinh doanh" },
+  { value: "inactive", label: "Ngừng" },
 ];
 
-export const ALL_AMENITIES = Object.keys(AMENITY_LABELS) as Amenity[];
-
-/** Thứ tự hiển thị ở danh sách: tiện nghi phân biệt hạng phòng lên trước,
- *  tiện nghi hạng nào cũng có (WiFi, TV, điều hoà) xuống sau */
-export const AMENITY_PRIORITY: Amenity[] = [
-  "bathtub",
-  "balcony",
-  "minibar",
-  "pool",
-  "breakfast",
-  "gym",
-  "safe",
-  "hair_dryer",
-  "parking",
-  "air_conditioning",
-  "tv",
-  "wifi",
+export const ROOM_TYPE_SORT_OPTIONS: { value: RoomTypeSort; label: string }[] = [
+  { value: "price_asc", label: "Giá thấp → cao" },
+  { value: "price_desc", label: "Giá cao → thấp" },
+  { value: "occupancy", label: "Công suất cao nhất" },
+  { value: "revenue", label: "Doanh thu cao nhất" },
+  { value: "name", label: "Tên A → Z" },
 ];
-
-export const sortAmenities = (list: Amenity[]) =>
-  [...list].sort(
-    (a, b) => AMENITY_PRIORITY.indexOf(a) - AMENITY_PRIORITY.indexOf(b),
-  );
