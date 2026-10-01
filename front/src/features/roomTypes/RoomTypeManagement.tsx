@@ -1,284 +1,209 @@
-import { useEffect, useState } from "react";
-import { ChevronDown, Plus, Search, X } from "lucide-react";
-import LoadingBar from "../../components/LoadingBar";
+import { useEffect, useMemo, useState } from "react";
+import { Lock, Plus, RotateCw } from "lucide-react";
+import { useAuthStore } from "../auth/store/authStore";
 import { useRoomTypeStore } from "./store/roomTypeStore";
-import RoomTypeRow, { ROOM_TYPE_GRID } from "./components/RoomTypeRow";
-import RoomTypeForm from "./components/RoomTypeForm";
-import type { RoomType } from "../../types/roomType";
+import RoomTypeStatsCards from "./components/RoomTypeStatsCards";
+import RoomTypeToolbar from "./components/RoomTypeToolbar";
+import RoomTypeCard, { type RoomTypeAction } from "./components/RoomTypeCard";
+import RoomTypeFormDialog, {
+  type RoomTypeFormTarget,
+} from "./components/RoomTypeFormDialog";
+import {
+  DeleteRoomTypeDialog,
+  ToggleRoomTypeDialog,
+} from "./components/RoomTypeConfirmDialogs";
+import type { RoomTypeItem } from "../../types/roomType";
+import { visibleRoomTypes } from "./utils/roomTypeMeta";
 
+const MANAGER_ROLES = ["manager", "admin"];
+/** Mảng rỗng cố định: selector Zustand không được trả mảng mới mỗi lần */
+const NO_ROLES: string[] = [];
+const time = (d: Date) =>
+  d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+
+type Confirm = { kind: "toggle" | "delete"; roomType: RoomTypeItem } | null;
+
+/**
+ * Trang Loại phòng.
+ * - Quản lý / admin: thêm, sửa, bật tắt kinh doanh, xoá (chỉ khi chưa có phòng).
+ * - Lễ tân: chỉ xem để tư vấn khách. Nút bị ẩn trên FE cho gọn, BE vẫn chặn bằng @Roles.
+ */
 export default function RoomTypeManagement() {
-  const {
-    roomTypes,
-    total,
-    totalPages,
-    loading,
-    filters,
-    setFilters,
-    fetchRoomTypes,
-    fetchRoomStats,
-  } = useRoomTypeStore();
+  const items = useRoomTypeStore((s) => s.items);
+  const filters = useRoomTypeStore((s) => s.filters);
+  const loading = useRoomTypeStore((s) => s.loading);
+  const lastUpdated = useRoomTypeStore((s) => s.lastUpdated);
+  const fetch = useRoomTypeStore((s) => s.fetch);
+  const upsert = useRoomTypeStore((s) => s.upsert);
+  const remove = useRoomTypeStore((s) => s.remove);
+  const resetFilters = useRoomTypeStore((s) => s.resetFilters);
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<RoomType | null>(null);
-  const [searchInput, setSearchInput] = useState(filters.search);
-  const [showHidden, setShowHidden] = useState(false);
+  const roles = useAuthStore((s) => s.user?.roles) ?? NO_ROLES;
+  const canManage = roles.some((r) => MANAGER_ROLES.includes(r));
 
-  // ── Tải dữ liệu lần đầu ─────────────────────────────
+  const [formTarget, setFormTarget] = useState<RoomTypeFormTarget | null>(null);
+  const [confirm, setConfirm] = useState<Confirm>(null);
+
   useEffect(() => {
-    fetchRoomTypes();
-    fetchRoomStats();
-  }, []);
+    void fetch();
+  }, [fetch]);
 
-  // ── Tìm kiếm: chờ 350ms sau khi ngừng gõ ────────────
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (searchInput !== filters.search) setFilters({ search: searchInput });
-    }, 350);
-    return () => clearTimeout(t);
-  }, [searchInput]);
+  const visible = useMemo(() => visibleRoomTypes(items, filters), [items, filters]);
+  const activeCount = items.filter((t) => t.is_active).length;
+  const roomCount = items.reduce((s, t) => s + t.rooms.total, 0);
 
-  // ── Dữ liệu suy ra ──────────────────────────────────
-  const firstLoad = loading && roomTypes.length === 0;
-  const active = roomTypes.filter((rt) => rt.is_active !== false);
-  const hidden = roomTypes.filter((rt) => rt.is_active === false);
-
-  // ── Hành động ───────────────────────────────────────
-  const openCreate = () => {
-    setEditTarget(null);
-    setFormOpen(true);
-  };
-
-  const openEdit = (rt: RoomType) => {
-    setEditTarget(rt);
-    setFormOpen(true);
-  };
-
-  const clearSearch = () => {
-    setSearchInput("");
-    setFilters({ search: "" });
+  const handleAction = (action: RoomTypeAction, t: RoomTypeItem) => {
+    if (action === "edit") setFormTarget({ mode: "edit", roomType: t });
+    else setConfirm({ kind: action, roomType: t });
   };
 
   return (
-    <div>
-      {/* Khung chính — không overflow-hidden để popup và menu tràn ra được */}
-      <div className="relative bg-white border border-line rounded-[10px]">
-        {/* Thanh tải — bọc riêng để bo góc trên khớp viền khung */}
-        <div className="absolute inset-x-0 top-0 h-[2px] overflow-hidden rounded-t-[10px] z-10">
-          <LoadingBar active={loading} />
+    <div className="flex flex-col gap-5">
+      {/* ===== Header ===== */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[12px] font-semibold uppercase tracking-[.08em] text-gold-700">
+            Quản trị
+          </p>
+          <h1 className="mt-1 font-display text-[34px] font-bold leading-tight text-navy-900">
+            Loại phòng
+          </h1>
+          <p className="mt-1 text-[13px] tabular-nums text-ink-secondary">
+            {loading && !lastUpdated
+              ? "Đang tải loại phòng"
+              : `${items.length} loại, ${activeCount} đang kinh doanh · ${roomCount} phòng · đổi giá chỉ áp dụng cho đặt phòng mới${
+                  lastUpdated ? `, cập nhật lúc ${time(lastUpdated)}` : ""
+                }`}
+          </p>
         </div>
-
-        {/* ── Tiêu đề ─────────────────────────────────── */}
-        <div className="px-5 py-4 flex items-start justify-between border-b border-line">
-          <div>
-            <h1 className="text-[19px] font-semibold text-ink tracking-[-0.01em]">
-              Loại phòng
-            </h1>
-            <p className="text-[12px] text-ink-muted mt-0.5 tabular-nums">
-              {firstLoad ? "Đang tải loại phòng…" : `${active.length} loại đang bán`}
-            </p>
-          </div>
-
+        <div className="flex gap-2">
           <button
-            onClick={openCreate}
-            className="h-[34px] px-3.5 rounded-md bg-navy-700 text-white text-[13px] font-medium hover:bg-navy-hover flex items-center gap-1.5"
+            type="button"
+            onClick={() => void fetch()}
+            disabled={loading}
+            className="flex h-10 items-center gap-2 rounded-[10px] border border-line-input bg-white px-3.5 text-[13.5px] font-medium text-navy-700 hover:border-navy-700 disabled:opacity-50"
           >
-            <Plus
+            <RotateCw
               size={14}
-              strokeWidth={2}
-            />
-            Thêm loại phòng
+              className={loading ? "animate-spin" : ""}
+            />{" "}
+            Làm mới
           </button>
-        </div>
-
-        {/* ── Tìm kiếm ────────────────────────────────── */}
-        <div className="px-5 py-2.5 border-b border-line flex items-center gap-1.5">
-          <div className="flex items-center gap-2 h-7 px-2.5 border border-line rounded-md w-[240px] focus-within:border-navy-700">
-            <Search
-              size={13}
-              strokeWidth={1.75}
-              className="text-ink-muted shrink-0"
-            />
-            <input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Tên loại phòng"
-              className="text-[12px] outline-none w-full text-ink bg-transparent"
-            />
-          </div>
-
-          {filters.search && (
+          {canManage && (
             <button
-              onClick={clearSearch}
-              aria-label="Bỏ tìm kiếm"
-              className="h-7 w-7 flex items-center justify-center border border-line rounded-md text-ink-muted hover:text-ink hover:bg-row-hover"
+              type="button"
+              onClick={() => setFormTarget({ mode: "create" })}
+              className="flex h-10 items-center gap-2 rounded-[10px] bg-navy-700 px-4 text-[14px] font-semibold text-white hover:bg-navy-hover"
             >
-              <X
-                size={13}
-                strokeWidth={1.75}
-              />
+              <Plus
+                size={15}
+                strokeWidth={2}
+              />{" "}
+              Thêm loại phòng
             </button>
           )}
         </div>
-
-        {/* ── Nội dung ────────────────────────────────── */}
-        {firstLoad ? (
-          <SkeletonRows />
-        ) : roomTypes.length === 0 ? (
-          <EmptyState
-            searching={!!filters.search}
-            onCreate={openCreate}
-            onClear={clearSearch}
-          />
-        ) : (
-          <div
-            className={`transition-opacity duration-150 ${
-              loading ? "opacity-40 pointer-events-none" : "opacity-100"
-            }`}
-          >
-            {/* Hàng tiêu đề cột — dùng chung GRID với RoomTypeRow */}
-            <div
-              className="grid items-center gap-3.5 h-[38px] px-4 bg-[#FAFBFB] border-b border-line text-[12px] text-ink-muted"
-              style={{ gridTemplateColumns: ROOM_TYPE_GRID }}
-            >
-              <span>Loại phòng</span>
-              <span>Phòng</span>
-              <span>Tiện nghi</span>
-              <span className="text-right">Mỗi đêm</span>
-              <span />
-            </div>
-
-            {active.map((rt) => (
-              <RoomTypeRow
-                key={rt.id}
-                roomType={rt}
-                onEdit={openEdit}
-              />
-            ))}
-
-            {/* Loại đã ẩn — gom cuối, mặc định thu gọn */}
-            {hidden.length > 0 && (
-              <>
-                <button
-                  onClick={() => setShowHidden((s) => !s)}
-                  aria-expanded={showHidden}
-                  className={`w-full flex items-center justify-between px-4 py-2.5 bg-[#FAFBFB] border-t border-line text-[12px] text-ink-muted hover:text-ink-secondary
-                    ${showHidden ? "" : "rounded-b-[10px]"}`}
-                >
-                  <span className="tabular-nums">
-                    Đã ẩn {hidden.length} loại phòng
-                  </span>
-                  <span className="flex items-center gap-1 text-ink-secondary">
-                    {showHidden ? "Thu gọn" : "Hiện"}
-                    <ChevronDown
-                      size={13}
-                      strokeWidth={1.75}
-                      className={`transition-transform ${showHidden ? "rotate-180" : ""}`}
-                    />
-                  </span>
-                </button>
-
-                {showHidden &&
-                  hidden.map((rt) => (
-                    <RoomTypeRow
-                      key={rt.id}
-                      roomType={rt}
-                      onEdit={openEdit}
-                    />
-                  ))}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ── Phân trang ──────────────────────────────── */}
-        {totalPages > 1 && (
-          <div className="px-5 py-3 flex items-center justify-between border-t border-line">
-            <span className="text-[12px] text-ink-muted tabular-nums">
-              Trang {filters.page} trên {totalPages}, tổng {total} loại
-            </span>
-            <div className="flex gap-1.5">
-              <button
-                disabled={filters.page <= 1}
-                onClick={() => setFilters({ page: filters.page - 1 })}
-                className="h-7 px-3 rounded-md border border-line text-[12px] text-ink hover:bg-row-hover disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Trước
-              </button>
-              <button
-                disabled={filters.page >= totalPages}
-                onClick={() => setFilters({ page: filters.page + 1 })}
-                className="h-7 px-3 rounded-md border border-line text-[12px] text-ink hover:bg-row-hover disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Sau
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
-      <RoomTypeForm
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        roomType={editTarget}
-      />
-    </div>
-  );
-}
+      <RoomTypeStatsCards />
 
-// ── Khung xám lần tải đầu — đúng chiều cao hàng thật (68px) ──
-function SkeletonRows() {
-  return (
-    <div>
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div
-          key={i}
-          className="grid items-center gap-3.5 min-h-[68px] px-4 border-b border-line-soft last:border-b-0"
-          style={{ gridTemplateColumns: ROOM_TYPE_GRID }}
-        >
-          <div className="space-y-2">
-            <div className="w-28 h-3 bg-[#F0F1F3] rounded animate-pulse" />
-            <div className="w-36 h-2.5 bg-[#F0F1F3] rounded animate-pulse" />
-          </div>
-          <div className="space-y-2">
-            <div className="w-20 h-2.5 bg-[#F0F1F3] rounded animate-pulse" />
-            <div className="w-full h-1.5 bg-[#F0F1F3] rounded-full animate-pulse" />
-          </div>
-          <div className="flex gap-1.5">
-            <div className="w-14 h-6 bg-[#F0F1F3] rounded-md animate-pulse" />
-            <div className="w-16 h-6 bg-[#F0F1F3] rounded-md animate-pulse" />
-            <div className="w-12 h-6 bg-[#F0F1F3] rounded-md animate-pulse" />
-          </div>
-          <div className="ml-auto w-20 h-3.5 bg-[#F0F1F3] rounded animate-pulse" />
-          <span />
+      {!canManage && (
+        <p className="flex items-center gap-2 rounded-[12px] border border-line bg-white px-4 py-2.5 text-[12.5px] text-ink-muted">
+          <Lock
+            size={14}
+            className="shrink-0"
+          />{" "}
+          Bạn đang xem với quyền lễ tân: xem được giá, sức chứa, tiện nghi để tư vấn
+          khách. Thêm, sửa, ngừng kinh doanh do quản lý thực hiện.
+        </p>
+      )}
+
+      <RoomTypeToolbar shown={visible.length} />
+
+      {/* ===== Lưới thẻ ===== */}
+      {loading && !lastUpdated ? (
+        <p className="py-16 text-center text-[13px] text-ink-muted">
+          Đang tải loại phòng
+        </p>
+      ) : visible.length === 0 ? (
+        <div className="rounded-[16px] border border-line bg-white px-6 py-14 text-center">
+          <p className="text-[14px] font-medium text-ink">
+            {items.length ? "Không có loại phòng phù hợp" : "Chưa có loại phòng nào"}
+          </p>
+          {items.length > 0 ? (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="mt-2 text-[12.5px] font-medium text-navy-700 hover:underline"
+            >
+              Xoá bộ lọc
+            </button>
+          ) : (
+            <p className="mt-1 text-[12.5px] text-ink-muted">
+              Tạo loại phòng trước, rồi thêm phòng ở trang Phòng.
+            </p>
+          )}
         </div>
-      ))}
-    </div>
-  );
-}
+      ) : (
+        <div
+          className={`grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3.5 transition-opacity ${
+            loading ? "pointer-events-none opacity-60" : ""
+          }`}
+        >
+          {visible.map((t: any) => (
+            <RoomTypeCard
+              key={t.id}
+              roomType={t}
+              canManage={canManage}
+              onAction={handleAction}
+            />
+          ))}
+          {canManage && !filters.search && filters.status !== "inactive" && (
+            <button
+              type="button"
+              onClick={() => setFormTarget({ mode: "create" })}
+              className="flex min-h-[300px] flex-col items-center justify-center gap-1.5 rounded-[16px] border-[1.5px] border-dashed border-line-input text-[13.5px] text-ink-muted transition-colors hover:border-navy-700 hover:bg-white hover:text-navy-700"
+            >
+              <Plus
+                size={22}
+                strokeWidth={1.8}
+                aria-hidden="true"
+              />{" "}
+              Thêm loại phòng
+            </button>
+          )}
+        </div>
+      )}
 
-// ── Trạng thái rỗng — phân biệt "chưa có gì" với "tìm không ra" ──
-function EmptyState({
-  searching,
-  onCreate,
-  onClear,
-}: {
-  searching: boolean;
-  onCreate: () => void;
-  onClear: () => void;
-}) {
-  return (
-    <div className="py-16 text-center">
-      <p className="text-[13px] text-ink-secondary mb-3">
-        {searching
-          ? "Không có loại phòng nào khớp từ khoá."
-          : "Chưa có loại phòng nào. Tạo loại phòng trước khi thêm phòng."}
-      </p>
-      <button
-        onClick={searching ? onClear : onCreate}
-        className="h-8 px-4 rounded-md border border-line text-[12px] text-ink hover:bg-row-hover"
-      >
-        {searching ? "Bỏ tìm kiếm" : "Thêm loại phòng"}
-      </button>
+      {/* ===== Hộp thoại ===== */}
+      <RoomTypeFormDialog
+        target={formTarget}
+        onClose={() => setFormTarget(null)}
+        onSaved={(t: any) => {
+          setFormTarget(null);
+          upsert(t);
+        }}
+      />
+      {confirm?.kind === "toggle" && (
+        <ToggleRoomTypeDialog
+          roomType={confirm.roomType}
+          onClose={() => setConfirm(null)}
+          onDone={(t: any) => {
+            setConfirm(null);
+            upsert(t);
+          }}
+        />
+      )}
+      {confirm?.kind === "delete" && (
+        <DeleteRoomTypeDialog
+          roomType={confirm.roomType}
+          onClose={() => setConfirm(null)}
+          onDone={(id: any) => {
+            setConfirm(null);
+            remove(id);
+          }}
+        />
+      )}
     </div>
   );
 }

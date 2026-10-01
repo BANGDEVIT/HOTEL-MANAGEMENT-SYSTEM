@@ -4,7 +4,7 @@ import LoadingBar from "../../components/LoadingBar";
 import { useInvoiceStore } from "./store/invoiceStore";
 import InvoiceStatsCards from "./components/InvoiceStatsCards";
 import InvoiceInsights from "./components/InvoiceInsights";
-import InvoiceToolbar from "./components/InvoiceToolBar";
+import InvoiceToolbar from "./components/InvoiceToolbar";
 import InvoiceTable from "./components/InvoiceTable";
 import InvoiceDrawer from "./components/InvoiceDrawer";
 import Pagination from "../customer/components/Pagination";

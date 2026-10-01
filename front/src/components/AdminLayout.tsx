@@ -6,7 +6,6 @@ import {
   CalendarDays,
   CalendarRange,
   ConciergeBell,
-  CreditCard,
   IdCard,
   LayoutDashboard,
   LogOut,
@@ -77,12 +76,12 @@ const NAV: NavGroup[] = [
         icon: ReceiptText,
         roles: EVERYONE,
       },
-      {
-        label: "Thanh toán",
-        path: "/admin/payments",
-        icon: CreditCard,
-        roles: EVERYONE,
-      },
+      // {
+      //   label: "Thanh toán",
+      //   path: "/admin/payments",
+      //   icon: CreditCard,
+      //   roles: EVERYONE,
+      // },
     ],
   },
   {

@@ -15,6 +15,7 @@ import ProfilePage from "./features/profile/ProfilePage";
 import CustomerManagement from "./features/customer/CustomerManagement";
 import BookingManagement from "./features/booking/BookingManagement";
 import ServiceManagement from "./features/service/ServiceManagement";
+import InvoiceManagement from "./features/invoice/InvoiceManagement";
 
 export default function App() {
   const { bootstrap, isInitializing } = useAuthStore();
@@ -151,6 +152,17 @@ export default function App() {
             <ProtectedRoute allowedRoles={["admin", "manager", "staff"]}>
               <AdminLayout>
                 <ServiceManagement />
+              </AdminLayout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/invoices"
+          element={
+            <ProtectedRoute allowedRoles={["admin", "manager", "staff"]}>
+              <AdminLayout>
+                <InvoiceManagement />
               </AdminLayout>
             </ProtectedRoute>
           }

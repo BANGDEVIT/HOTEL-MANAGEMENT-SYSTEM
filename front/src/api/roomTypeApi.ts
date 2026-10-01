@@ -1,53 +1,52 @@
 import axiosInstance from "./axiosInstance";
+import type { RoomTypeInput, RoomTypeItem } from "../types/roomType";
 
-import type {
-  CreateRoomTypePayload,
-  RoomType,
-  RoomTypeFilters,
-  RoomTypeListResponse,
-  UpdateRoomTypePayload,
-} from "../types/roomType";
-import type { ApiResponse } from "./api";
+/** Mọi response của BE đều bọc trong { success, statusCode, message, data } */
+interface Envelope<T> {
+  success: boolean;
+  data: T;
+}
 
+/**
+ * API cho màn quản lý Loại phòng. Thêm / sửa / bật tắt đều trả về BẢN MỚI kèm số liệu
+ * -> FE thay đúng thẻ đó, không phải tải lại cả danh sách.
+ * (GET /room-types công khai, chỉ loại đang kinh doanh, vẫn do trang Phòng dùng như cũ.)
+ */
 export const roomTypeApi = {
-  getAll: async (
-    filters: Partial<RoomTypeFilters>,
-  ): Promise<RoomTypeListResponse> => {
-    const params = new URLSearchParams();
-    if (filters.search) params.set("search", filters.search);
-    if (filters.page) params.set("page", String(filters.page));
-    if (filters.limit) params.set("limit", String(filters.limit));
-
-    const { data } = await axiosInstance.get<ApiResponse<RoomTypeListResponse>>(
-      `/room-types?${params}`,
-    );
+  /** Mọi loại (kể cả ngừng kinh doanh), không phân trang: khách sạn chỉ vài loại */
+  listForManage: async () => {
+    const { data } =
+      await axiosInstance.get<Envelope<RoomTypeItem[]>>("/room-types/manage");
     return data.data;
   },
 
-  getOne: async (id: string): Promise<RoomType> => {
-    const { data } = await axiosInstance.get<ApiResponse<RoomType>>(
-      `/room-types/${id}`,
-    );
-    return data.data;
-  },
-
-  create: async (payload: CreateRoomTypePayload): Promise<RoomType> => {
-    const { data } = await axiosInstance.post<ApiResponse<RoomType>>(
+  create: async (body: RoomTypeInput) => {
+    const { data } = await axiosInstance.post<Envelope<RoomTypeItem>>(
       "/room-types",
-      payload,
+      body,
     );
     return data.data;
   },
 
-  update: async (id: string, payload: UpdateRoomTypePayload): Promise<RoomType> => {
-    const { data } = await axiosInstance.patch<ApiResponse<RoomType>>(
+  update: async (id: string, body: Partial<RoomTypeInput>) => {
+    const { data } = await axiosInstance.patch<Envelope<RoomTypeItem>>(
       `/room-types/${id}`,
-      payload,
+      body,
     );
     return data.data;
   },
 
-  remove: async (id: string): Promise<void> => {
+  setActive: async (id: string, isActive: boolean) => {
+    const { data } = await axiosInstance.patch<Envelope<RoomTypeItem>>(
+      `/room-types/${id}/status`,
+      {
+        is_active: isActive,
+      },
+    );
+    return data.data;
+  },
+
+  remove: async (id: string) => {
     await axiosInstance.delete(`/room-types/${id}`);
   },
 };
