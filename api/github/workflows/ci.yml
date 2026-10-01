@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  # Cho phép cd.yml gọi lại workflow này trước khi deploy
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    env:
+      # URL giả: prisma.config.ts cần biến tồn tại để generate; CI không kết nối DB thật
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Prisma generate + validate schema
+        run: |
+          npx prisma generate
+          npx prisma validate
+
+      - name: Lint
+        run: npx eslint src
+
+      - name: Unit test
+        run: npm test -- --ci --passWithNoTests
+
+      - name: Build
+        run: npm run build
+
+  docker:
+    name: Docker build (không push)
+    # Chỉ chạy ở PR; khi deploy thì cd.yml tự build + push
+    if: github.event_name == 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
