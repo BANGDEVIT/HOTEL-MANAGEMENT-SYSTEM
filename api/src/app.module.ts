@@ -20,7 +20,6 @@ import { RedisModule } from './common/redis/redis.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppThrottlerModule } from './common/throttler/throttler.module';
 import { AppController } from './app.controller';
-import { DashboardModule } from './src/modules/dashboard/dashboard.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
