@@ -1,0 +1,30 @@
+# Đặt file này ở /opt/hotel/docker-compose.yml trên VPS.
+# Cùng thư mục cần: .env (biến cho compose) và .env.api (biến cho app NestJS).
+name: hotel
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  api:
+    image: ghcr.io/${GHCR_OWNER}/hotel-api:${API_TAG:-latest}
+    restart: unless-stopped
+    env_file: .env.api
+    environment:
+      PORT: 3000
+    # Không mở cổng ra ngoài: chỉ container web gọi được qua mạng nội bộ
+    expose:
+      - '3000'
+    logging: *logging
+
+  web:
+    image: ghcr.io/${GHCR_OWNER}/hotel-web:${WEB_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - '80:80'
+    depends_on:
+      - api
+    logging: *logging
