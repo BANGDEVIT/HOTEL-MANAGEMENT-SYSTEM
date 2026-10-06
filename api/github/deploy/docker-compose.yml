@@ -2,7 +2,8 @@
 # Cùng thư mục cần: .env (biến cho compose) và .env.api (biến cho app NestJS).
 name: hotel
 
-x-logging: &logging
+# Chỗ để khai báo đoạn cấu hình dùng chung.
+x-logging: &logging # cơ chế "đặt tên rồi tái sử dụng"
   driver: json-file
   options:
     max-size: 10m
@@ -13,11 +14,54 @@ services:
     image: ghcr.io/${GHCR_OWNER}/hotel-api:${API_TAG:-latest}
     restart: unless-stopped
     env_file: .env.api
+    # environment ghi đè env_file: cấu hình kết nối Redis do compose quản lý, không cần ghi trong .env.api
     environment:
       PORT: 3000
+      # Container mặc định giờ UTC: đặt giờ Việt Nam để "hôm nay", ca làm, log... đúng ngày
+      TZ: Asia/Ho_Chi_Minh
+      REDIS_HOST: redis # tên service bên dưới = tên máy trong mạng nội bộ Docker
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Thiếu REDIS_PASSWORD trong file .env}
     # Không mở cổng ra ngoài: chỉ container web gọi được qua mạng nội bộ
     expose:
       - '3000'
+    # Chờ Redis sẵn sàng (healthcheck xanh) rồi mới khởi động API
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Thiếu REDIS_PASSWORD trong file .env}
+    # Chỉ dùng làm cache:
+    #  --requirepass         bắt buộc mật khẩu
+    #  --maxmemory 128mb     giới hạn RAM, VPS nhỏ không bị Redis ăn hết
+    #  allkeys-lru           đầy bộ nhớ thì xoá key lâu không dùng nhất
+    #  --save "" / appendonly no: không ghi xuống đĩa, khởi động lại thì cache rỗng (chấp nhận được với cache)
+    # $$ = ký tự $ thật: để shell trong container đọc biến, không phải compose
+    command:
+      - sh
+      - -c
+      - >-
+        exec redis-server
+        --requirepass "$$REDIS_PASSWORD"
+        --maxmemory 128mb
+        --maxmemory-policy allkeys-lru
+        --save ""
+        --appendonly no
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'redis-cli -a "$$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG',
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # Không có ports/expose ra ngoài: chỉ container trong cùng compose gọi được
     logging: *logging
 
   web:
