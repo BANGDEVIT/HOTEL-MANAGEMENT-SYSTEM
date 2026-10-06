@@ -24,8 +24,8 @@ export default function RoomToolbar() {
   useEffect(() => {
     roomTypeApi
       .getAll({ page: 1, limit: 100 })
-      .then((res) =>
-        setRoomTypes(res.data.map((rt) => ({ id: rt.id, name: rt.name }))),
+      .then((res: any) =>
+        setRoomTypes(res.data.map((rt: any) => ({ id: rt.id, name: rt.name }))),
       )
       .catch(() => {});
   }, []);

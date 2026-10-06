@@ -7,8 +7,8 @@ import { toast } from "sonner";
 import type { Room } from "../../../types/room";
 import { useRoomStore } from "../stores/room.store";
 import { roomTypeApi } from "../../../api/roomTypeApi";
-import type { RoomType } from "@/types/roomType";
 import Dropdown from "@/components/Dropdown";
+import type { RoomType } from "@/types/roomType";
 
 const createSchema = z.object({
   room_number: z.string().min(1, "Nhập số phòng"),
@@ -39,9 +39,9 @@ export default function RoomForm({ open, onClose, room }: Props) {
     if (!open) return;
     roomTypeApi
       .getAll({ page: 1, limit: 100 })
-      .then((res) =>
+      .then((res: any) =>
         setRoomTypes(
-          res.data.map((rt) => ({
+          res.data.map((rt: any) => ({
             id: rt.id,
             name: rt.name,
             base_price: rt.base_price,
