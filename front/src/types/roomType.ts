@@ -61,6 +61,39 @@ export interface RoomTypeItem {
   can_delete: boolean; // chưa có phòng nào
 }
 
+/**
+ * 1 loại phòng ở danh sách công khai (GET /room-types): chỉ loại ĐANG kinh doanh, không kèm số liệu.
+ * Trang Phòng dùng để chọn loại khi tạo/sửa phòng và để lọc. Khớp RoomTypeResponseDto ở BE.
+ */
+export interface RoomType {
+  id: string;
+  name: string;
+  base_price: number;
+  capacity: number;
+  bed_type: BedType;
+  amenities: Amenity[];
+  area: number | null;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Response phân trang của GET /room-types (khớp PaginationRoomTypeResponseDto ở BE) */
+export interface PaginatedRoomTypes {
+  data: RoomType[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPage: number;
+}
+
+export interface RoomTypeListQuery {
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
 /* ============================ Dữ liệu FE gửi lên ============================ */
 
 export interface RoomTypeInput {
