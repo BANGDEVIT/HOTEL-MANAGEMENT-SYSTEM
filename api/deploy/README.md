@@ -11,14 +11,23 @@ merge vào main ──> CD: chạy lại CI ──> build image ──> push GHC
                                                                       └─ docker compose up -d
 ```
 
-Trên VPS có 2 container:
+Trên VPS có 3 container:
 
 ```
-Internet ──:80──> web (nginx) ──/api/*──> api (NestJS :3000, không mở ra ngoài) ──> Neon Postgres
+Internet ──:80──> web (nginx) ──/api/*──> api (NestJS :3000) ──> Neon Postgres
+                     │                        │
+                     │                        └──> redis (cache, :6379)
                      └── các route còn lại: file build React (SPA)
+
+Chỉ web mở cổng 80 ra Internet. api và redis chỉ gọi được trong mạng nội bộ Docker.
 ```
 
-Hai repo deploy độc lập: đổi FE thì chỉ container `web` khởi động lại, đổi BE thì chỉ container `api`.
+Repo chung `api/` + `front/`, 4 workflow ở `.github/workflows/` (thư mục gốc repo):
+
+- `api-ci.yml`, `web-ci.yml`: chạy ở mọi PR vào `main`/`dev`
+- `api-cd.yml`, `web-cd.yml`: chạy khi merge vào `main`, và CHỈ khi thư mục tương ứng có thay đổi
+
+Đổi FE thì chỉ container `web` khởi động lại, đổi BE thì chỉ container `api`.
 
 ---
 
@@ -59,7 +68,7 @@ Thử lại bằng lệnh `ssh -i gh_deploy deploy@IP_VPS`. Vào được là ke
 ```
 /opt/hotel/
 ├── docker-compose.yml   copy từ repo api/deploy/docker-compose.yml
-├── .env                 theo .env.example   (GHCR_OWNER)
+├── .env                 theo .env.example   (GHCR_OWNER, REDIS_PASSWORD)
 └── .env.api             theo .env.api.example (DATABASE_URL, JWT...)
 ```
 
@@ -77,7 +86,7 @@ Image mặc định là private. Tạo Personal Access Token (classic) chỉ v�
 echo "TOKEN_CUA_BAN" | docker login ghcr.io -u your-github-username --password-stdin
 ```
 
-### 5. GitHub: làm ở cả 2 repo `api` và `front`
+### 5. GitHub (làm 1 lần cho repo)
 
 **Settings → Environments → New environment** tên `production`, rồi thêm các secret sau:
 
@@ -88,9 +97,9 @@ echo "TOKEN_CUA_BAN" | docker login ghcr.io -u your-github-username --password-s
 | `VPS_SSH_KEY` | toàn bộ nội dung file `gh_deploy`  |
 | `VPS_PORT`    | chỉ cần khi SSH không chạy cổng 22 |
 
-Repo `front`, không bắt buộc: **Variables** → `VITE_API_URL` nếu prefix API khác `/api/v1`.
+Không bắt buộc: **Variables** → `VITE_API_URL` nếu prefix API khác `/api/v1`.
 
-**Settings → Branches → Add rule** cho `main`: bật _Require a pull request_ và _Require status checks_ (chọn `Lint, test, build` / `Lint, type-check, build`). Từ đây code chưa qua CI thì không merge được.
+**Settings → Branches → Add rule** cho `main`: bật _Require a pull request_ và _Require status checks_ (chọn `API - lint, test, build` và `Web - lint, type-check, build`). Từ đây code chưa qua CI thì không merge được.
 
 ### 6. Deploy lần đầu
 
@@ -145,7 +154,7 @@ WEB_TAG=<commit-sha> docker compose up -d --no-deps web
 | CI lỗi ở bước Lint ngay lần đầu      | Code cũ còn lỗi ESLint. Chạy `npx eslint src --fix` ở máy rồi sửa phần còn lại                          |
 | CI lỗi ở Unit test                   | Các file `*.spec.ts` do `nest g` sinh ra mà chưa mock DI. Xoá chúng hoặc sửa mock                       |
 | `denied` khi `docker compose pull`   | VPS chưa `docker login ghcr.io`, hoặc token thiếu quyền `read:packages`                                 |
-| `migrate deploy` báo lỗi kết nối     | Đang dùng URL `-pooler` của Neon. Đổi sang URL direct                                                   |
+| `migrate deploy` báo lỗi kết nối     | `DIRECT_URL` trong `.env.api` đang có chữ `-pooler`. Phải là URL kết nối thẳng                          |
 | Container api khởi động lại liên tục | `docker compose logs api`: thường do thiếu biến trong `.env.api`, hoặc `start:prod` trỏ sai `dist/main` |
 | Trang FE F5 bị 404                   | Không xảy ra nếu dùng `nginx.conf` này. Kiểm tra image web đã build lại chưa                            |
 
