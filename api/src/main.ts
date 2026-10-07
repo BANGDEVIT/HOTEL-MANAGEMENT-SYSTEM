@@ -80,6 +80,9 @@ async function bootstrap() {
     `,
   });
 
+  // Lên VPS mà thiếu nó thì Throttler sẽ chặn nhầm tất cả người dùng.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   await app.listen(process.env.PORT ?? 3001); // ← fix
 }
 
