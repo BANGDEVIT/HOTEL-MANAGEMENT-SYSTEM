@@ -1,25 +1,28 @@
-name: Web CD
+name: API CD
 
 on:
   push:
     branches: [main]
+    # Chỉ deploy API khi có thay đổi trong api/ (hoặc workflow của api)
     paths:
-      - "front/**"
-      - ".github/workflows/web-*.yml"
+      - "api/**"
+      - ".github/workflows/api-*.yml"
+  # Nút "Run workflow" để deploy lại bằng tay
   workflow_dispatch:
 
+# Không cho 2 lần deploy chạy chồng nhau; lần sau chờ lần trước xong
 concurrency:
-  group: deploy-web
+  group: deploy-api
   cancel-in-progress: false
 
 jobs:
   ci:
-    uses: ./.github/workflows/web-ci.yml
+    uses: ./.github/workflows/api-ci.yml
     permissions:
       contents: read
 
   deploy:
-    name: Web - build image + deploy lên VPS
+    name: API - build image + deploy lên VPS
     needs: ci
     runs-on: ubuntu-latest
     environment: production
@@ -29,9 +32,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Tên image trên GHCR bắt buộc chữ thường
       - name: Image name
         id: img
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hotel-web" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hotel-api" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -41,22 +45,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Tag latest để VPS kéo về, tag theo commit SHA để rollback
       - uses: docker/build-push-action@v6
         with:
-          context: ./front
+          context: ./api
           push: true
-          build-args: |
-            VITE_API_URL=${{ vars.VITE_API_URL || '/api/v1' }}
           tags: |
             ${{ steps.img.outputs.name }}:latest
             ${{ steps.img.outputs.name }}:${{ github.sha }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
 
-      # Chưa có VPS thì bỏ qua bước này (image vẫn được build + push lên GHCR).
-      # Có VPS rồi: Settings → Secrets and variables → Actions → Variables → VPS_READY = true
       - name: Deploy qua SSH
-        if: vars.VPS_READY == 'true'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -66,8 +66,10 @@ jobs:
           script: |
             set -e
             cd /opt/hotel
-            docker compose pull web
-            # --no-deps: chỉ thay container web, không động vào api
-            docker compose up -d --no-deps web
+            docker compose pull api
+            # Chạy migration TRƯỚC khi đổi container: migration lỗi thì bản cũ vẫn chạy
+            docker compose run --rm api npx prisma migrate deploy
+            docker compose up -d api
             docker image prune -f
-            docker compose ps web
+            sleep 5
+            docker compose ps api
