@@ -1,28 +1,25 @@
-name: API CD
+name: Web CD
 
 on:
   push:
     branches: [main]
-    # Chỉ deploy API khi có thay đổi trong api/ (hoặc workflow của api)
     paths:
-      - "api/**"
-      - ".github/workflows/api-*.yml"
-  # Nút "Run workflow" để deploy lại bằng tay
+      - "front/**"
+      - ".github/workflows/web-*.yml"
   workflow_dispatch:
 
-# Không cho 2 lần deploy chạy chồng nhau; lần sau chờ lần trước xong
 concurrency:
-  group: deploy-api
+  group: deploy-web
   cancel-in-progress: false
 
 jobs:
   ci:
-    uses: ./.github/workflows/api-ci.yml
+    uses: ./.github/workflows/web-ci.yml
     permissions:
       contents: read
 
   deploy:
-    name: API - build image + deploy lên VPS
+    name: Web - build image + deploy lên VPS
     needs: ci
     runs-on: ubuntu-latest
     environment: production
@@ -32,10 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Tên image trên GHCR bắt buộc chữ thường
       - name: Image name
         id: img
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hotel-api" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hotel-web" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -45,16 +41,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Tag latest để VPS kéo về, tag theo commit SHA để rollback
       - uses: docker/build-push-action@v6
         with:
-          context: ./api
+          context: ./front
           push: true
+          build-args: |
+            VITE_API_URL=${{ vars.VITE_API_URL || '/api/v1' }}
           tags: |
             ${{ steps.img.outputs.name }}:latest
             ${{ steps.img.outputs.name }}:${{ github.sha }}
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,mode=max,scope=api
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
 
       - name: Deploy qua SSH
         uses: appleboy/ssh-action@v1
@@ -66,10 +63,8 @@ jobs:
           script: |
             set -e
             cd /opt/hotel
-            docker compose pull api
-            # Chạy migration TRƯỚC khi đổi container: migration lỗi thì bản cũ vẫn chạy
-            docker compose run --rm api npx prisma migrate deploy
-            docker compose up -d api
+            docker compose pull web
+            # --no-deps: chỉ thay container web, không động vào api
+            docker compose up -d --no-deps web
             docker image prune -f
-            sleep 5
-            docker compose ps api
+            docker compose ps web
