@@ -22,4 +22,13 @@ export default defineConfig([
       "@typescript-eslint/no-explicit-any": "off",
     },
   },
+  // Code do shadcn/ui sinh ra: cố ý export kèm *Variants (buttonVariants, badgeVariants...)
+  // để tái dùng style -> tắt rule Fast Refresh riêng cho thư mục này.
+  // Khối sau ghi đè khối trước, chỉ với file khớp "files": code của dự án vẫn giữ rule.
+  {
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: {
+      "react-refresh/only-export-components": "off",
+    },
+  },
 ]);
