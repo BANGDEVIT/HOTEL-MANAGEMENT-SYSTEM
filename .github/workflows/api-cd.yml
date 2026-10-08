@@ -56,7 +56,10 @@ jobs:
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
+      # Chưa có VPS thì bỏ qua bước này (image vẫn được build + push lên GHCR).
+      # Có VPS rồi: Settings → Secrets and variables → Actions → Variables → VPS_READY = true
       - name: Deploy qua SSH
+        if: vars.VPS_READY == 'true'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
