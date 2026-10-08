@@ -80,7 +80,8 @@ async function bootstrap() {
     `,
   });
 
-  // Lên VPS mà thiếu nó thì Throttler sẽ chặn nhầm tất cả người dùng.
+  // Sau nginx, mọi request đều mang IP của nginx -> Throttler chặn nhầm mọi người.
+  // Tin 1 lớp proxy phía trước để Express đọc IP thật từ header X-Forwarded-For.
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
   await app.listen(process.env.PORT ?? 3001); // ← fix
